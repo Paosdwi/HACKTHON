@@ -172,19 +172,21 @@
 
 ## Phase 6 — Formal Orchestration、Reasoning 與 Publication
 
-- [ ] **T60 — 實作 900 秒 DAG Orchestrator 與 deadline policy**
+- [x] **T60 — 實作 900 秒 DAG Orchestrator 與 deadline policy**
   - **依賴**：T42、T50、T51、T52、T53
   - **需求**：CP-FR003-02..05、CP-FR011-11..12、CP-ARCH-08
   - **允許修改目錄**：`src/crypto_trust_agent/application/orchestration/`、`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/infrastructure/fakes/`、`tests/unit/`、`tests/integration/core/`
   - **驗收條件**：Core runtime 使用 local monotonic 900 秒 deadline；跨 process 只傳 UTC deadline/budget/sent time/safety margin，receiver 重建 local monotonic deadline；Step Functions/Lambda/HTTP/SDK outer guards 生效；stage hard deadlines/buffer、pipeline overlap、雙資產平行、低優先停止與所有 planned jobs 收斂；無無界 retry/sleep。
   - **測試種類**：Unit with fake Clock、DAG Integration、deadline/timeout、property-based
+  - **完成證據**：2026-08-01 test-first red→green；`python -B -m unittest tests.unit.test_formal_run_orchestrator tests.integration.core.test_formal_run_orchestration -v`（26 passed）、完整 unit regression（121 passed）、Core integration regression（25 passed）、architecture regression（4 passed）。版本化 `formal-run-budget-1.0.0` 固定 900,000ms hard deadline 與 11-stage deterministic DAG；wire 僅使用 frozen 六欄 `DeadlineDTO`，receiver 以 injected Clock 重建 local monotonic deadline。required/optional degradation、provider unavailable、timeout、cancellation、quarantine/no verified evidence、contradiction retention、replay/payload conflict、zero retry、低優先停止與 terminal convergence 均通過；T62 僅保留穩定 publication placeholder 且未宣稱完成，未連線 AWS/network 或呼叫真實模型。
 
-- [ ] **T61 — 實作 Structured Reasoning Context 與 ReasoningProvider fake**
+- [x] **T61 — 實作 Structured Reasoning Context 與 ReasoningProvider fake**
   - **依賴**：T52、T53、T60
   - **需求**：CP-FR009-*、CP-FR005-06..07
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/application/`、`src/crypto_trust_agent/infrastructure/fakes/`、`tests/unit/`、`tests/contract/`
   - **驗收條件**：context task-scoped、bounded、不含 raw HTML/secret；shared semantic assertions 驗證 Fact→Evidence/Analysis、Inference→Fact、Conclusion→Fact/Inference graph，missing/cross-task/quarantined citation 拒絕；Opus 一次 repair 共用 60 秒，之後 Sonnet；fallback invalid 不發布。
   - **測試種類**：Unit、schema/citation、Port Contract、timeout/fallback
+  - **完成證據**：2026-08-01 test-first red→green；`python -B -m unittest tests.unit.test_reasoning_context tests.unit.test_reasoning_sequence tests.contract.test_reasoning_fake -v`（28 passed）、完整 unit regression（119 passed）、contract regression（75 passed）、architecture regression（4 passed）。新增 frozen `ReasoningProvider` 的 `generate`／`repair`／`health_check` exact-wire DTO/Protocol、Core-owned non-production fake 與 `shared_reasoning_assertions`；三個 stable CT IDs、60s/60s/3s timeout、Core retry owner、max attempts 1、zero hidden retry、typed/unknown error、receiver-local deadline、replay/payload conflict均通過。Structured Context 以 canonical JSON/hash deterministic projection，限制 524288 bytes/64000 tokens/Evidence 120/Analysis 32/Contradiction 64/Limitations 50，記錄 deterministic omissions，只接受 task-scoped active Evidence與 max-sequence assessment；missing/cross-task/quarantined/hallucinated citation拒絕，counter evidence、雙邊 contradiction與 degraded market limitation保留。Core sequence 固定 primary→最多一次 primary repair（共用 primary 60秒 window）→fallback；invalid fallback 明確 `publishable=False`，未開始 T62 或進行 artifact publication。未修改 frozen schema、Provider-owned adapter路徑或原始 CSV，未連線 AWS/network/真實模型。
 
 - [ ] **T62 — 實作 canonical report、Evidence List、Execution Log、renderers 與 Manifest**
   - **依賴**：T32、T61
