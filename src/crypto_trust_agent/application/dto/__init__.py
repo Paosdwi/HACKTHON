@@ -22,6 +22,23 @@ from crypto_trust_agent.application.dto.evidence_extractor import (
     UsageDTO,
     ValidationErrorDTO,
 )
+from crypto_trust_agent.application.dto.reasoning import (
+    AnalysisRefDTO,
+    ConclusionDTO,
+    ConfidenceComponentsDTO,
+    ContradictionDTO,
+    DiagnosticDTO,
+    EvidenceRefDTO,
+    FactDTO,
+    GenerateRequestDTO,
+    InferenceDTO,
+    OmissionDTO,
+    ProviderDTO,
+    ReasoningContextDTO,
+    ReasoningHealthCheckRequestDTO,
+    ReasoningResultDTO,
+    RepairRequestDTO as ReasoningRepairRequestDTO,
+)
 from crypto_trust_agent.application.dto.source_collector import (
     CapabilitiesRequestDTO,
     CollectionIssueDTO,
@@ -36,7 +53,22 @@ from crypto_trust_agent.application.dto.source_collector import (
 )
 
 __all__ = (
+    "AnalysisRefDTO",
     "CapabilitiesRequestDTO",
+    "ConclusionDTO",
+    "ConfidenceComponentsDTO",
+    "ContradictionDTO",
+    "DiagnosticDTO",
+    "EvidenceRefDTO",
+    "FactDTO",
+    "GenerateRequestDTO",
+    "InferenceDTO",
+    "OmissionDTO",
+    "ProviderDTO",
+    "ReasoningContextDTO",
+    "ReasoningHealthCheckRequestDTO",
+    "ReasoningRepairRequestDTO",
+    "ReasoningResultDTO",
     "CollectionIssueDTO",
     "CollectionResultDTO",
     "CollectRequestDTO",

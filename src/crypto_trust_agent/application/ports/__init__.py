@@ -19,6 +19,7 @@ from crypto_trust_agent.application.ports.preflight import (
     TaskReadinessProbe,
     TaskReadinessRequestDTO,
 )
+from crypto_trust_agent.application.ports.reasoning import ReasoningProvider
 from crypto_trust_agent.application.ports.repositories import (
     ArtifactRepository,
     Clock,
@@ -45,6 +46,7 @@ __all__ = (
     "IndependenceGroupingStrategy",
     "MarketRegimeProvider",
     "ProviderHealthDTO",
+    "ReasoningProvider",
     "ReasoningHealthCheckRequestDTO",
     "SourceCollector",
     "TaskReadinessDTO",
