@@ -2,6 +2,14 @@
 
 from crypto_trust_agent.application.dto.source_collector import CollectorHealthCheckRequestDTO
 from crypto_trust_agent.application.ports.evidence_extractor import EvidenceExtractor
+from crypto_trust_agent.application.ports.evidence_strategies import (
+    ConfidenceCompositionStrategy,
+    ContradictionDetectionStrategy,
+    DuplicateDetectionStrategy,
+    IndependenceGroupingStrategy,
+    TrustComponentStrategy,
+)
+from crypto_trust_agent.application.ports.market_regime import MarketRegimeProvider
 from crypto_trust_agent.application.ports.preflight import (
     HealthCheckPort,
     HealthCheckRequestDTO,
@@ -25,12 +33,17 @@ __all__ = (
     "ArtifactRepository",
     "Clock",
     "CollectorHealthCheckRequestDTO",
+    "ConfidenceCompositionStrategy",
+    "ContradictionDetectionStrategy",
+    "DuplicateDetectionStrategy",
     "EventPublisher",
     "EvidenceExtractor",
     "EvidenceRepository",
     "ExecutionRepository",
     "HealthCheckPort",
     "HealthCheckRequestDTO",
+    "IndependenceGroupingStrategy",
+    "MarketRegimeProvider",
     "ProviderHealthDTO",
     "ReasoningHealthCheckRequestDTO",
     "SourceCollector",
@@ -38,4 +51,5 @@ __all__ = (
     "TaskReadinessProbe",
     "TaskReadinessRequestDTO",
     "TaskRepository",
+    "TrustComponentStrategy",
 )

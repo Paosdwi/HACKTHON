@@ -371,7 +371,7 @@ class AnalysisProducer:
             kind = ProducerKind(self.kind)
         except ValueError as error:
             raise ValueError("invalid producer kind") from error
-        if not self.name or not _VERSION_PATTERN.fullmatch(self.version):
+        if not self.name or not isinstance(self.version, str) or not 1 <= len(self.version) <= 128:
             raise ValueError("invalid producer identity/version")
         if not self.ruleset_version or len(self.ruleset_version) > 128:
             raise ValueError("invalid producer ruleset_version")

@@ -148,6 +148,53 @@ class ExecutionApiTests(unittest.TestCase):
         self.assertEqual(2, allowed[2]["attempt_number"])
         self.assertEqual(2, len(self.store.executions))
 
+    def test_failed_admin_rerun_opens_one_frozen_manual_case_and_never_creates_third(self):
+        self.call()
+        fail(self.executions, self.clock, "EXEC-001", "provider_timeout")
+        seed_ready(self.store, "TASK-002", "PF-002")
+        rerun_body = {
+            "operation_id": "OP-API-RERUN-001",
+            "execution_id": "EXEC-002",
+            "preflight_id": "PF-002",
+            "input_lock_hash": HASH_B,
+            "original_execution_id": "EXEC-001",
+            "technical_failure_code": "provider_timeout",
+        }
+        self.assertEqual(201, self.call(
+            path="/api/v1/tasks/TASK-002/executions",
+            request_body=rerun_body,
+            token=ADMIN_TOKEN,
+        )[0])
+        fail(self.executions, self.clock, "EXEC-002", "provider_timeout")
+        seed_ready(self.store, "TASK-003", "PF-003")
+        third_body = {
+            "operation_id": "OP-API-THIRD-001",
+            "execution_id": "EXEC-003",
+            "preflight_id": "PF-003",
+            "input_lock_hash": HASH_B,
+            "original_execution_id": "EXEC-001",
+            "technical_failure_code": "provider_timeout",
+        }
+
+        first = self.call(
+            path="/api/v1/tasks/TASK-003/executions",
+            request_body=third_body,
+            token=ADMIN_TOKEN,
+        )
+        replay = self.call(
+            path="/api/v1/tasks/TASK-003/executions",
+            request_body=third_body,
+            token=ADMIN_TOKEN,
+        )
+
+        self.assertEqual(202, first[0])
+        self.assertEqual(first[2], replay[2])
+        self.assertEqual("rerun_failed", first[2]["reason_code"])
+        self.assertEqual(1, len(self.store.manual_cases))
+        self.assertNotIn("EXEC-003", self.store.executions)
+        self.assertIsNone(self.store.preflights["TASK-003"][-1].consumed_at)
+        self.assertEqual(2, len(self.store.quota[(SUBJECT, HASH_A)]))
+
     def test_cross_tenant_task_is_hidden_and_unknown_repository_errors_are_safe(self):
         self.store.tasks["TASK-001"] = TaskRecordDTO("TASK-001", "other-subject", HASH_A, "ready_for_execution", 2, "2026-08-01T02:00:00Z")
         status, _, payload = self.call()

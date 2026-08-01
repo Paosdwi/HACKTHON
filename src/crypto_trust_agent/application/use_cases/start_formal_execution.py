@@ -258,7 +258,7 @@ class StartFormalExecutionUseCase:
                     operation_id=manual_operation,
                     execution_id=rerun.execution_id,
                     expected_version=rerun.version,
-                    reason_code="repeated_technical_failure",
+                    reason_code="rerun_failed",
                     created_at=now,
                     deadline=self._deadline(manual_operation, now),
                 ),
@@ -329,7 +329,6 @@ class StartFormalExecutionUseCase:
             "formal_quota_exhausted",
             "invalid_technical_failure_code",
             "execution_version_conflict",
-            "execution_id_conflict",
         }:
             raise StartFormalExecutionConflict(code)
         if code == "admin_authorization_required":

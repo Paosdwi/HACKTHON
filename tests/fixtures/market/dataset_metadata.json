@@ -1,0 +1,27 @@
+{
+  "dataset_name": "Crypto Market Fixture",
+  "generated_at": "2026-06-09T09:16:29Z",
+  "source": {"name": "public_market_data", "type": "public_market_data"},
+  "time_basis": "UTC",
+  "interval": "1d",
+  "price_unit": "USDT",
+  "period": {"start_date": "2026-01-01", "end_date": "2026-01-04"},
+  "symbols": [
+    {
+      "asset": "BTC",
+      "pair": "BTCUSDT",
+      "file": "data/BTC_daily_ohlcv.csv",
+      "rows": 4,
+      "start_date": "2026-01-01",
+      "end_date": "2026-01-04"
+    }
+  ],
+  "columns": [
+    {"name": "date", "description": "UTC date in YYYY-MM-DD format"},
+    {"name": "open", "description": "Daily open price in USDT"},
+    {"name": "high", "description": "Daily high price in USDT"},
+    {"name": "low", "description": "Daily low price in USDT"},
+    {"name": "close", "description": "Daily close price in USDT"},
+    {"name": "volume", "description": "Daily traded volume in base asset units"}
+  ]
+}
