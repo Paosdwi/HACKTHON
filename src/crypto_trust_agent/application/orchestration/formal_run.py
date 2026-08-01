@@ -15,7 +15,7 @@ from datetime import timedelta
 from enum import Enum
 from threading import Event, RLock, Thread
 from types import MappingProxyType
-from typing import Mapping, Protocol
+from typing import Callable, Mapping, Protocol
 
 from crypto_trust_agent.application.dto.common import (
     DeadlineDTO,
@@ -24,6 +24,7 @@ from crypto_trust_agent.application.dto.common import (
     build_local_deadline,
 )
 from crypto_trust_agent.application.dto.repositories import (
+    ArtifactDescriptorDTO,
     ClockReadRequestDTO,
     EventErrorDTO,
     ExecutionEventDTO,
@@ -31,17 +32,46 @@ from crypto_trust_agent.application.dto.repositories import (
     PublishEventRequestDTO,
     TransitionExecutionRequestDTO,
 )
+from crypto_trust_agent.application.orchestration.pipeline_context import (
+    FormalRunPipelineContext,
+    PipelineDuplicateError,
+    PipelineOverflowError,
+    PipelineSnapshot,
+)
+from crypto_trust_agent.application.orchestration.stage_contributions import (
+    AnalysisContributionDTO,
+    AssessmentContributionDTO,
+    CollectionContributionDTO,
+    EventContributionDTO,
+    EvidenceContributionDTO,
+    MAX_ANALYSIS_REFS,
+    MAX_ASSESSMENTS,
+    MAX_CLAIM_LINKS,
+    MAX_CONTRADICTIONS,
+    MAX_CONTRIBUTIONS_PER_STEP,
+    MAX_EVENTS,
+    MAX_EVIDENCE,
+    MAX_LIMITATIONS,
+    MAX_RAW_RECORDS,
+    PipelineContributionDTO,
+    PipelineContributionKind,
+    ReasoningContributionDTO,
+    StrategyContributionDTO,
+)
 from crypto_trust_agent.application.planning import DeterministicPlan
 from crypto_trust_agent.application.ports.repositories import (
     Clock,
     EventPublisher,
     ExecutionRepository,
 )
-from crypto_trust_agent.domain.primitives import UtcInstant
+from crypto_trust_agent.domain.primitives import SCHEMA_VERSION, UtcInstant
 
 FORMAL_RUN_BUDGET_VERSION = "formal-run-budget-1.0.0"
 FORMAL_RUN_HARD_DEADLINE_MS = 900_000
 _SAFE_CODE = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_HASH = re.compile(r"^sha256:[0-9a-f]{64}$")
+MAX_PUBLICATION_DESCRIPTORS = 7
+MAX_PUBLICATION_MISSING_REASONS = 16
 
 
 class FormalRunValidationError(ValueError):
@@ -220,6 +250,7 @@ class FormalRunCommand:
     execution: ExecutionRecordDTO
     plan: DeterministicPlan
     cancellation: CancellationToken = field(default_factory=CancellationToken, compare=False)
+    question: str | None = None
 
     def __post_init__(self) -> None:
         if not re.fullmatch(r"^OP-[A-Z0-9][A-Z0-9._:-]{0,126}$", self.operation_id):
@@ -228,6 +259,10 @@ class FormalRunCommand:
             raise FormalRunValidationError("invalid formal run command")
         if not isinstance(self.cancellation, CancellationToken):
             raise FormalRunValidationError("invalid cancellation signal")
+        if self.question is not None and (
+            not isinstance(self.question, str) or not 1 <= len(self.question) <= 2_000
+        ):
+            raise FormalRunValidationError("invalid question")
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +275,13 @@ class FormalRunStepRequest:
     budget_version: str
     deadline: DeadlineDTO
     planned_job_ids: tuple[str, ...] = ()
+    pipeline_snapshot: PipelineSnapshot | None = None
+
+    def __post_init__(self) -> None:
+        if self.pipeline_snapshot is not None and not isinstance(
+            self.pipeline_snapshot, PipelineSnapshot
+        ):
+            raise ValueError("invalid pipeline_snapshot")
 
 
 @dataclass(frozen=True, slots=True)
@@ -252,6 +294,7 @@ class FormalRunStepResult:
     quarantined_count: int = 0
     contradiction_count: int = 0
     completed_job_ids: tuple[str, ...] = ()
+    contributions: tuple[PipelineContributionDTO, ...] = ()
 
     def __post_init__(self) -> None:
         if self.safe_reason_code is not None and not _SAFE_CODE.fullmatch(self.safe_reason_code):
@@ -266,7 +309,13 @@ class FormalRunStepResult:
             not isinstance(item, str) or not item.startswith("JOB-") for item in completed
         ):
             raise ValueError("invalid completed_job_ids")
+        contributions = tuple(self.contributions)
+        if len(contributions) > MAX_CONTRIBUTIONS_PER_STEP or any(
+            not isinstance(item, PipelineContributionDTO) for item in contributions
+        ):
+            raise ValueError("invalid stage contributions")
         object.__setattr__(self, "completed_job_ids", completed)
+        object.__setattr__(self, "contributions", contributions)
 
 
 class FormalRunStepExecutor(Protocol):
@@ -281,6 +330,45 @@ class StepRecord:
     started_monotonic_ms: int
     finished_monotonic_ms: int
     safe_reason_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FormalRunPublicationSummaryDTO:
+    attempted: bool
+    outcome: str | None
+    available: tuple[ArtifactDescriptorDTO, ...] = ()
+    missing_reason_codes: tuple[str, ...] = ()
+    manifest_sha256: str | None = None
+    schema_version: str = "1.0.0"
+
+    def __post_init__(self) -> None:
+        if self.schema_version != "1.0.0":
+            raise ValueError("unsupported publication summary schema_version")
+        if type(self.attempted) is not bool:
+            raise ValueError("publication attempted must be boolean")
+        if self.outcome not in {None, "complete", "partial", "failed"}:
+            raise ValueError("invalid publication outcome")
+        available = tuple(self.available)
+        reasons = tuple(self.missing_reason_codes)
+        if len(available) > MAX_PUBLICATION_DESCRIPTORS or any(
+            not isinstance(item, ArtifactDescriptorDTO) for item in available
+        ):
+            raise ValueError("invalid publication descriptors")
+        if len({(item.artifact_type, item.format) for item in available}) != len(available):
+            raise ValueError("duplicate publication descriptor")
+        if len(reasons) > MAX_PUBLICATION_MISSING_REASONS or len(set(reasons)) != len(reasons):
+            raise ValueError("invalid publication missing reasons")
+        if any(not isinstance(item, str) or not _SAFE_CODE.fullmatch(item) for item in reasons):
+            raise ValueError("invalid publication reason code")
+        if self.outcome in {"complete", "partial"}:
+            if not self.attempted or self.manifest_sha256 is None or not _HASH.fullmatch(self.manifest_sha256):
+                raise ValueError("completed publication requires manifest hash")
+        elif self.manifest_sha256 is not None:
+            raise ValueError("failed publication cannot have manifest hash")
+        if self.outcome is None and (self.attempted or available or reasons):
+            raise ValueError("empty publication summary is inconsistent")
+        object.__setattr__(self, "available", available)
+        object.__setattr__(self, "missing_reason_codes", reasons)
 
 
 @dataclass(frozen=True, slots=True)
@@ -299,7 +387,33 @@ class FormalRunResult:
     contradiction_count: int
     planned_job_ids: tuple[str, ...]
     artifact_boundary_kind: str = "stable_t62_boundary_placeholder"
-    artifact_publication_completed: bool = False
+    publication: FormalRunPublicationSummaryDTO = field(
+        default_factory=lambda: FormalRunPublicationSummaryDTO(False, None)
+    )
+
+    @property
+    def artifact_publication_completed(self) -> bool:
+        return self.publication.outcome in {"complete", "partial"}
+
+    @property
+    def publication_attempted(self) -> bool:
+        return self.publication.attempted
+
+    @property
+    def publication_outcome(self) -> str | None:
+        return self.publication.outcome
+
+    @property
+    def available_descriptors(self) -> tuple[ArtifactDescriptorDTO, ...]:
+        return self.publication.available
+
+    @property
+    def missing_reason_codes(self) -> tuple[str, ...]:
+        return self.publication.missing_reason_codes
+
+    @property
+    def manifest_sha256(self) -> str | None:
+        return self.publication.manifest_sha256
 
     def step(self, step: FormalRunStep) -> StepRecord:
         return next(item for item in self.steps if item.step is step)
@@ -316,12 +430,22 @@ class FormalRunOrchestrator:
         execution_repository: ExecutionRepository,
         *,
         budget_policy: FormalRunBudgetPolicy = DEFAULT_FORMAL_RUN_BUDGET_POLICY,
+        artifact_assembler: object | None = None,
+        artifact_publication: object | None = None,
+        artifact_repository: object | None = None,
+        pipeline_context_factory: Callable[..., FormalRunPipelineContext] | None = None,
     ) -> None:
         self._clock = clock
         self._steps = step_executor
         self._events = event_publisher
         self._executions = execution_repository
         self._policy = budget_policy
+        self._assembler = artifact_assembler
+        self._publication = artifact_publication
+        self._artifact_repo = artifact_repository
+        self._pipeline_factory = pipeline_context_factory or FormalRunPipelineContext
+        if not callable(self._pipeline_factory):
+            raise TypeError("pipeline_context_factory must be callable")
         self._completed: dict[str, tuple[tuple[object, bytes, bytes], FormalRunResult]] = {}
         self._operation_locks: dict[str, RLock] = {}
         self._operation_locks_guard = RLock()
@@ -354,6 +478,7 @@ class FormalRunOrchestrator:
                 raise FormalRunOperationConflict("operation_id payload conflict")
             return replay[1]
         self._validate(command)
+        pipeline_context = self._new_pipeline_context(command)
 
         now_utc, now_monotonic, runtime_id = self._clock_snapshot(command.operation_id)
         utc_remaining_ms = (
@@ -376,6 +501,7 @@ class FormalRunOrchestrator:
             job.job_id for job in sorted(command.plan.sourcing_jobs, key=lambda item: item.priority)
         )
         pending_extraction: FormalRunStepResult | None = None
+        publication = FormalRunPublicationSummaryDTO(False, None)
 
         current_execution = self._transition(
             command,
@@ -427,6 +553,7 @@ class FormalRunOrchestrator:
                 self._policy.version,
                 deadline,
                 planned_job_ids if definition.step is FormalRunStep.COLLECTION else (),
+                pipeline_context.snapshot(),
             )
             self._publish_step_event(command, request, StepOutcome.SUCCESS, started=True, duration_ms=0, safe_reason_code=None, root_deadline=local_deadline)
             collection_finished_override: int | None = None
@@ -470,6 +597,21 @@ class FormalRunOrchestrator:
                     step_result.contradiction_count,
                     step_result.completed_job_ids,
                 )
+            if effective_outcome in {StepOutcome.SUCCESS, StepOutcome.DEGRADED}:
+                try:
+                    self._apply_stage_contributions(
+                        pipeline_context,
+                        definition.step,
+                        step_result.contributions,
+                    )
+                except (ValueError, PipelineDuplicateError, PipelineOverflowError):
+                    effective_outcome = StepOutcome.FAILURE
+                    step_result = FormalRunStepResult(
+                        StepOutcome.FAILURE,
+                        "stage_contribution_invalid",
+                        completed_job_ids=step_result.completed_job_ids,
+                    )
+
             record = StepRecord(
                 definition.step,
                 step_operation,
@@ -555,6 +697,18 @@ class FormalRunOrchestrator:
                     local_deadline,
                     boundary_deadline=stage_deadline,
                 )
+                if self._assembler is not None and self._publication is not None:
+                    publication = self._execute_publication(
+                        command,
+                        pipeline_context.snapshot(),
+                        local_deadline,
+                        stage_deadline,
+                    )
+                    if publication.outcome == "partial":
+                        partial.add("publication_partial")
+                    elif publication.outcome == "failed":
+                        terminal = TerminalOutcome.FAILED
+                        degraded.update(publication.missing_reason_codes)
 
         if terminal is None:
             terminal = TerminalOutcome.PARTIAL if partial else TerminalOutcome.SUCCESS
@@ -603,9 +757,318 @@ class FormalRunOrchestrator:
             tuple(sorted(degraded)),
             contradiction_count,
             planned_job_ids,
+            artifact_boundary_kind="t64_publication_bridge" if self._assembler else "stable_t62_boundary_placeholder",
+            publication=publication,
         )
         self._completed[command.operation_id] = (identity, result)
         return result
+
+    def _new_pipeline_context(self, command: FormalRunCommand) -> FormalRunPipelineContext:
+        question = command.question or f"{command.plan.question_type.value} analysis"
+        try:
+            context = self._pipeline_factory(
+                task_id=command.execution.task_id,
+                execution_id=command.execution.execution_id,
+                question=question,
+                assets=tuple(command.plan.assets_requested_order),
+            )
+        except Exception:
+            raise FormalRunDependencyError("pipeline_context_invalid") from None
+        if not isinstance(context, FormalRunPipelineContext):
+            raise FormalRunDependencyError("pipeline_context_invalid")
+        if context.task_id != command.execution.task_id or context.execution_id != command.execution.execution_id:
+            raise FormalRunDependencyError("pipeline_context_invalid")
+        return context
+
+    def _apply_stage_contributions(
+        self,
+        context: FormalRunPipelineContext,
+        step: FormalRunStep,
+        contributions: tuple[PipelineContributionDTO, ...],
+    ) -> None:
+        allowed = {
+            FormalRunStep.INITIALIZATION: {PipelineContributionKind.EVENT},
+            FormalRunStep.COLLECTION: {
+                PipelineContributionKind.COLLECTION,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.EXTRACTION: {
+                PipelineContributionKind.EVIDENCE,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.NORMALIZATION: {
+                PipelineContributionKind.EVIDENCE,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.ASSESSMENT: {
+                PipelineContributionKind.ASSESSMENT,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.MARKET_ANALYSIS: {
+                PipelineContributionKind.ANALYSIS,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.STRATEGY_EVALUATION: {
+                PipelineContributionKind.STRATEGY,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.CONTEXT_BOUNDARY: {PipelineContributionKind.EVENT},
+            FormalRunStep.REASONING_BOUNDARY: {
+                PipelineContributionKind.REASONING,
+                PipelineContributionKind.EVENT,
+            },
+            FormalRunStep.ARTIFACT_PLACEHOLDER: {PipelineContributionKind.EVENT},
+        }[step]
+        snapshot = context.snapshot()
+        raw_record_ids: list[str] = []
+        evidence: list[object] = []
+        claim_links: list[object] = []
+        assessments: list[object] = []
+        analyses: list[object] = []
+        contradictions: list[object] = []
+        limitations: list[str] = []
+        reasoning: list[object] = []
+        events: list[object] = []
+
+        for contribution in contributions:
+            if (
+                contribution.schema_version != SCHEMA_VERSION
+                or contribution.payload.schema_version != SCHEMA_VERSION
+            ):
+                raise ValueError("unsupported stage contribution schema_version")
+            if contribution.kind not in allowed:
+                raise ValueError("stage contribution ownership mismatch")
+            payload = contribution.payload
+            if payload.task_id != context.task_id or payload.execution_id != context.execution_id:
+                raise ValueError("stage contribution identity mismatch")
+            if isinstance(payload, CollectionContributionDTO):
+                raw_record_ids.extend(payload.raw_record_ids)
+            elif isinstance(payload, EvidenceContributionDTO):
+                evidence.extend(payload.evidence)
+                claim_links.extend(payload.claim_links)
+            elif isinstance(payload, AssessmentContributionDTO):
+                assessments.extend(payload.assessments)
+            elif isinstance(payload, AnalysisContributionDTO):
+                analyses.extend(payload.analysis_refs)
+            elif isinstance(payload, StrategyContributionDTO):
+                contradictions.extend(payload.contradictions)
+                limitations.extend(payload.limitations)
+            elif isinstance(payload, ReasoningContributionDTO):
+                reasoning.append(payload.reasoning_result)
+            elif isinstance(payload, EventContributionDTO):
+                events.extend(payload.events)
+
+        def validate_ids(name: str, existing: tuple[str, ...], incoming: tuple[str, ...], maximum: int) -> None:
+            if len(existing) + len(incoming) > maximum:
+                raise PipelineOverflowError(name, maximum)
+            if len(incoming) != len(set(incoming)) or set(existing) & set(incoming):
+                raise PipelineDuplicateError(name, next(iter(incoming), name))
+
+        validate_ids("raw_record_ids", snapshot.raw_record_ids, tuple(raw_record_ids), MAX_RAW_RECORDS)
+        validate_ids(
+            "evidence",
+            tuple(item.evidence_id for item in snapshot.evidence),
+            tuple(item.evidence_id for item in evidence),
+            MAX_EVIDENCE,
+        )
+        validate_ids(
+            "claim_links",
+            tuple(item.link_id for item in snapshot.claim_links),
+            tuple(item.link_id for item in claim_links),
+            MAX_CLAIM_LINKS,
+        )
+        validate_ids(
+            "assessments",
+            tuple(item.assessment_id for item in snapshot.assessments),
+            tuple(item.assessment_id for item in assessments),
+            MAX_ASSESSMENTS,
+        )
+        validate_ids(
+            "analysis_refs",
+            tuple(item.analysis_id for item in snapshot.analysis_refs),
+            tuple(item.analysis_id for item in analyses),
+            MAX_ANALYSIS_REFS,
+        )
+        validate_ids(
+            "contradictions",
+            tuple(item.contradiction_id for item in snapshot.contradictions),
+            tuple(item.contradiction_id for item in contradictions),
+            MAX_CONTRADICTIONS,
+        )
+        validate_ids(
+            "events",
+            tuple(item.event_id for item in snapshot.events),
+            tuple(item.event_id for item in events),
+            MAX_EVENTS,
+        )
+        if len(snapshot.limitations) + len(limitations) > MAX_LIMITATIONS:
+            raise PipelineOverflowError("limitations", MAX_LIMITATIONS)
+        if len(limitations) != len(set(limitations)) or set(snapshot.limitations) & set(limitations):
+            raise PipelineDuplicateError("limitations", next(iter(limitations), "limitation"))
+        if len(reasoning) > 1 or (reasoning and snapshot.reasoning_result is not None):
+            raise PipelineDuplicateError("reasoning_result", "reasoning_result")
+
+        all_evidence_ids = {item.evidence_id for item in snapshot.evidence} | {
+            item.evidence_id for item in evidence
+        }
+        all_analysis_ids = {item.analysis_id for item in snapshot.analysis_refs} | {
+            item.analysis_id for item in analyses
+        }
+        for item in evidence:
+            if item.task_id != context.task_id or item.execution_id != context.execution_id:
+                raise ValueError("evidence identity mismatch")
+            if item.raw_record_id not in set(snapshot.raw_record_ids) | set(raw_record_ids):
+                raise ValueError("evidence raw-record lineage missing")
+        for item in claim_links:
+            if item.task_id != context.task_id or item.evidence_id not in all_evidence_ids:
+                raise ValueError("claim-link identity mismatch")
+        for item in assessments:
+            if item.task_id != context.task_id or item.evidence_id not in all_evidence_ids:
+                raise ValueError("assessment identity mismatch")
+        for item in contradictions:
+            if not set(item.evidence_refs) <= all_evidence_ids:
+                raise ValueError("contradiction citation mismatch")
+        for item in reasoning:
+            if any(not set(fact.evidence_refs) <= all_evidence_ids for fact in item.facts):
+                raise ValueError("reasoning Evidence citation mismatch")
+            if any(not set(fact.analysis_refs) <= all_analysis_ids for fact in item.facts):
+                raise ValueError("reasoning Analysis citation mismatch")
+        for event in events:
+            if (
+                event.task_id != context.task_id
+                or event.execution_id != context.execution_id
+                or event.step != step.value
+            ):
+                raise ValueError("event identity mismatch")
+
+        if raw_record_ids:
+            context.append_raw_record_ids(raw_record_ids)
+        for item in evidence:
+            context.append_evidence(item)
+        if claim_links:
+            context.append_claim_links(claim_links)
+        if assessments:
+            context.append_assessments(assessments)
+        for item in analyses:
+            context.append_analysis(item)
+        for item in contradictions:
+            context.append_contradiction(item)
+        for text in limitations:
+            context.append_limitation(text)
+        if reasoning:
+            context.set_reasoning_result(reasoning[0])
+        for event in events:
+            context.append_event(event)
+
+    def _execute_publication(
+        self,
+        command: FormalRunCommand,
+        snapshot: PipelineSnapshot,
+        local_deadline: int,
+        stage_deadline: int,
+    ) -> FormalRunPublicationSummaryDTO:
+        """Assemble once and publish once with a receiver-valid UTC deadline."""
+        from crypto_trust_agent.application.orchestration.artifact_assembler import (
+            AssemblerValidationError,
+        )
+        from crypto_trust_agent.application.publication import (
+            ArtifactPublicationResult,
+            PublicationError,
+            PublicationValidationError,
+        )
+
+        current_mono = self._monotonic(command.operation_id)
+        utc_result = self._clock.now_utc(
+            ClockReadRequestDTO(self._derived_operation(command.operation_id, "CLOCK:PUB:UTC"))
+        )
+        if isinstance(utc_result, ErrorResultDTO):
+            return FormalRunPublicationSummaryDTO(
+                False, "failed", missing_reason_codes=("unexpected_publication_error",)
+            )
+        absolute_remaining_ms = (
+            command.execution.absolute_deadline_at.as_datetime()
+            - utc_result.utc.as_datetime()
+        ) // timedelta(milliseconds=1)
+        effective_budget_ms = min(
+            25_000,
+            absolute_remaining_ms,
+            local_deadline - current_mono,
+            stage_deadline - current_mono,
+        )
+        safety_margin_ms = 100
+        if effective_budget_ms <= safety_margin_ms:
+            return FormalRunPublicationSummaryDTO(
+                False, "failed", missing_reason_codes=("publication_deadline_exceeded",)
+            )
+
+        deadline_at = utc_result.utc.as_datetime() + timedelta(
+            milliseconds=effective_budget_ms
+        )
+        try:
+            pub_deadline = DeadlineDTO(
+                "1.0.0",
+                self._derived_operation(command.operation_id, "PUB"),
+                deadline_at.isoformat().replace("+00:00", "Z"),
+                effective_budget_ms,
+                utc_result.utc,
+                safety_margin_ms,
+            )
+            request = self._assembler.assemble(
+                snapshot,
+                generated_at=utc_result.utc,
+                deadline=pub_deadline,
+            )
+        except (AssemblerValidationError, PublicationValidationError, ValueError):
+            return FormalRunPublicationSummaryDTO(
+                False, "failed", missing_reason_codes=("assembler_invalid",)
+            )
+        except Exception:
+            return FormalRunPublicationSummaryDTO(
+                False, "failed", missing_reason_codes=("unexpected_publication_error",)
+            )
+
+        try:
+            publication_result = self._publication.publish(request)
+            if not isinstance(publication_result, ArtifactPublicationResult):
+                return FormalRunPublicationSummaryDTO(
+                    True, "failed", missing_reason_codes=("unexpected_publication_error",)
+                )
+        except PublicationError as error:
+            if error.code == "deadline_exceeded":
+                reason = "publication_deadline_exceeded"
+            elif error.code in {
+                "artifact_hash_mismatch",
+                "artifact_size_mismatch",
+                "artifact_conflict",
+                "manifest_incomplete",
+                "manifest_order_violation",
+            }:
+                reason = "publication_integrity_failure"
+            else:
+                reason = "artifact_repository_failure"
+            return FormalRunPublicationSummaryDTO(
+                True, "failed", missing_reason_codes=(reason,)
+            )
+        except PublicationValidationError:
+            return FormalRunPublicationSummaryDTO(
+                True, "failed", missing_reason_codes=("publication_integrity_failure",)
+            )
+        except Exception:
+            return FormalRunPublicationSummaryDTO(
+                True, "failed", missing_reason_codes=("unexpected_publication_error",)
+            )
+
+        missing_reasons = tuple(
+            str(item["reason_code"])
+            for item in publication_result.manifest.missing
+        )
+        return FormalRunPublicationSummaryDTO(
+            True,
+            publication_result.manifest.publication_outcome,
+            publication_result.descriptors,
+            missing_reasons,
+            publication_result.manifest_descriptor.sha256,
+        )
 
     def _execute_sourcing_dag(
         self,
@@ -704,6 +1167,7 @@ class FormalRunOrchestrator:
                 self._policy.version,
                 extract_deadline,
                 (job.job_id,),
+                collection_request.pipeline_snapshot,
             )
             extracted = self._execute_with_guard(command, extract_request)
             if (
@@ -746,6 +1210,7 @@ class FormalRunOrchestrator:
         has_evidence_count = False
         quarantined_count = 0
         contradiction_count = 0
+        contributions: list[PipelineContributionDTO] = []
 
         for job, result in selected:
             required_failures.update(result.required_source_failures)
@@ -758,6 +1223,7 @@ class FormalRunOrchestrator:
                 has_evidence_count = True
             quarantined_count += result.quarantined_count
             contradiction_count = max(contradiction_count, result.contradiction_count)
+            contributions.extend(result.contributions)
             if step is FormalRunStep.COLLECTION and result.outcome in {
                 StepOutcome.FAILURE, StepOutcome.SKIPPED, StepOutcome.TIMEOUT
             }:
@@ -791,6 +1257,7 @@ class FormalRunOrchestrator:
             quarantined_count,
             contradiction_count,
             tuple(job.job_id for job, _ in selected if job.job_id in completed),
+            tuple(contributions),
         )
 
     def _execute_with_guard(
