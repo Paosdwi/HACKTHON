@@ -1,0 +1,19 @@
+[project]
+name = "crypto-trust-agent"
+version = "0.1.0"
+description = "CryptoTrust Agent Core Platform"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.14",
+  "uvicorn==0.34.3",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx==0.28.1",
+  "jsonschema==4.23.0",
+  "referencing==0.36.2",
+]
+
+[tool.unittest]
+test-directories = ["tests/unit", "tests/contract", "tests/architecture", "tests/integration/core", "tests/e2e"]
