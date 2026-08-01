@@ -196,6 +196,60 @@ class ProviderBoundaryTests(unittest.TestCase):
             self.assertEqual(expected, result.error.code)
             self.assertNotIn("secret", repr(result.to_wire()).lower())
 
+    def test_non_string_required_provider_fields_fail_closed_without_leak(self) -> None:
+        base = request("OP-MR-STRING-FIELDS")
+        fields = (
+            "operation_id",
+            "asset",
+            "as_of",
+            "input_feature_hash",
+            "computed_at",
+            "quality",
+        )
+        for index, field in enumerate(fields):
+            with self.subTest(field=field):
+                operation = f"OP-MR-STRING-FIELD-{index}"
+                value = replace(base, operation_id=operation, deadline=deadline(operation))
+                secret = f"PA72-PROVIDER-PAYLOAD-SECRET-{field}"
+                payload: dict[str, object] = {
+                    "schema_version": "1.0.0",
+                    "operation_id": operation,
+                    "asset": value.asset,
+                    "as_of": str(value.as_of),
+                    "model": {
+                        "name": value.expected_model.name,
+                        "version": "v1",
+                        "invocation_id": "INV-STRING-FIELD",
+                    },
+                    "probabilities": {
+                        "bullish": "0.4",
+                        "bearish": "0.2",
+                        "sideways": "0.4",
+                    },
+                    "anomaly_score": "0.1",
+                    "feature_window": value.feature_window.to_wire(),
+                    "input_feature_hash": value.input_feature_hash,
+                    "computed_at": "2026-08-01T02:00:00Z",
+                    "quality": "valid",
+                    "limitations": [],
+                }
+                payload[field] = {"provider_payload": secret}
+                raw_payload = json.dumps(payload, separators=(",", ":"))
+                events = RecordingEvents()
+                client = StubSageMakerClient()
+                client.configure(operation, raw_payload)
+
+                result = make_adapter(client=client, events=events).infer(value)
+
+                self.assertIsInstance(result, ErrorResultDTO)
+                self.assertEqual("invalid_provider_output", result.error.code)
+                rendered = json.dumps({
+                    "result": result.to_wire(),
+                    "events": events.items,
+                }).lower()
+                self.assertNotIn(secret.lower(), rendered)
+                self.assertNotIn(raw_payload.lower(), rendered)
+
     def test_timeout_effective_deadline_cancellation_endpoint_and_zero_retry(self) -> None:
         timeout_client = StubSageMakerClient()
         timeout_client.configure("OP-MR-TIME", TimeoutError("vendor secret payload"))

@@ -288,7 +288,10 @@ class SageMakerMarketRegimeProvider:
             # DTO construction already proves canonical Decimal and nonempty source refs.
             if str(feature.value) != _canonical_provider_decimal(str(feature.value)):
                 return "invalid_feature_schema"
-        if request.feature_window.end != request.as_of.as_datetime().date():
+        normalized_as_of = request.as_of
+        if isinstance(normalized_as_of, str):
+            return "feature_alignment_error"
+        if request.feature_window.end != normalized_as_of.as_datetime().date():
             return "feature_alignment_error"
         if request.expected_model.name != self._model_name:
             return "model_version_mismatch"
@@ -301,12 +304,25 @@ class SageMakerMarketRegimeProvider:
             request.to_wire(), ensure_ascii=False, separators=(",", ":")
         ).encode("utf-8")
 
+    @staticmethod
+    def _required_provider_string(mapping: Mapping[str, object], field: str) -> str:
+        value = mapping[field]
+        if not isinstance(value, str):
+            raise TypeError("provider string field is invalid")
+        return value
+
     def _map_response(
         self, request: InferRequestDTO, raw: bytes | str
     ) -> MarketRegimeResultDTO:
         value = _parse_provider_json(raw)
         if set(value) != _ROOT_FIELDS or value["schema_version"] != CONTRACT_VERSION:
             raise ValueError("provider root shape is invalid")
+        operation_id = self._required_provider_string(value, "operation_id")
+        asset = self._required_provider_string(value, "asset")
+        as_of = self._required_provider_string(value, "as_of")
+        input_feature_hash = self._required_provider_string(value, "input_feature_hash")
+        computed_at = self._required_provider_string(value, "computed_at")
+        quality = self._required_provider_string(value, "quality")
         model = value["model"]
         probabilities = value["probabilities"]
         window = value["feature_window"]
@@ -336,16 +352,16 @@ class SageMakerMarketRegimeProvider:
         if not set(limitations).issubset(self._safe_limitations):
             raise ValueError("provider limitations are not locally allowlisted")
         result = MarketRegimeResultDTO(
-            operation_id=value["operation_id"],
-            asset=value["asset"],
-            as_of=value["as_of"],
+            operation_id=operation_id,
+            asset=asset,
+            as_of=as_of,
             model=ModelDTO(model["name"], model["version"], model["invocation_id"]),
             probabilities=distribution,
             anomaly_score=_canonical_provider_decimal(value["anomaly_score"]),
             feature_window=type(request.feature_window)(window["start"], window["end"]),
-            input_feature_hash=value["input_feature_hash"],
-            computed_at=value["computed_at"],
-            quality=value["quality"],
+            input_feature_hash=input_feature_hash,
+            computed_at=computed_at,
+            quality=quality,
             limitations=tuple(limitations),
             schema_version=value["schema_version"],
         )
