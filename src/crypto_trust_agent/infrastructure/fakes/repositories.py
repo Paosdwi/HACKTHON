@@ -65,6 +65,7 @@ _ERROR_CATEGORY = {
     "integrity": PortErrorCategory.INTEGRITY,
     "validation": PortErrorCategory.VALIDATION,
     "timeout": PortErrorCategory.TIMEOUT,
+    "unavailable": PortErrorCategory.UNAVAILABLE,
 }
 
 
@@ -305,54 +306,185 @@ class FakeExecutionRepository:
     """Non-production sole authority for fake execution acquisition."""
 
     non_production = True
+    _ACQUIRE_FAULT_STAGES = frozenset(
+        {"before_commit", "after_preflight_consume", "after_replay_record"}
+    )
 
-    def __init__(self, store: FakePlatformStore, clock: FakeClock) -> None:
+    def __init__(
+        self,
+        store: FakePlatformStore,
+        clock: FakeClock,
+        *,
+        acquire_fault_at: str | None = None,
+    ) -> None:
+        if acquire_fault_at is not None and acquire_fault_at not in self._ACQUIRE_FAULT_STAGES:
+            raise ValueError("unsupported fake acquire fault stage")
         self._store = store
         self._clock = clock
+        self._acquire_fault_at = acquire_fault_at
+        self._acquire_fault_consumed = False
 
     def acquire_quota_and_create(self, request: AcquireExecutionRequestDTO) -> ExecutionRecordDTO | ErrorResultDTO:
         with self._store.lock:
+            replay_key = ("execution_acquire", request.operation_id)
+            # Server-generated timestamps, deadlines, and authorization IDs may change
+            # when an at-least-once caller reconstructs the same operation. Keep the
+            # replay identity stable while still binding every caller-controlled and
+            # quota-relevant field.
+            identity = (
+                request.operation_id,
+                request.execution_id,
+                request.trusted_user_scope,
+                request.request_fingerprint,
+                request.task_id,
+                request.expected_task_version,
+                request.input_lock_hash,
+                request.dependency_snapshot_hash,
+                request.preflight_id,
+                request.attempt_kind,
+                request.original_execution_id,
+                request.technical_failure_code,
+                None
+                if request.admin_authorization is None
+                else request.admin_authorization.verified_admin_subject_hash,
+            )
+
+            def remember(result: ExecutionRecordDTO | ErrorResultDTO):
+                self._store.replay_identities[replay_key] = identity
+                self._store.replays[replay_key] = result
+                return result
+
             task = self._store.tasks.get(request.task_id)
             if (
                 task is None
                 or task.trusted_user_scope != request.trusted_user_scope
                 or task.request_fingerprint != request.request_fingerprint
             ):
-                return _error(self._clock, "execution_repository", request.operation_id, "preflight_stale", "validation")
-            replay = self._store.replays.get(("execution_acquire", request.operation_id))
+                return _error(
+                    self._clock,
+                    "execution_repository",
+                    request.operation_id,
+                    "preflight_stale",
+                    "validation",
+                )
+            replay = self._store.replays.get(replay_key)
             if replay is not None:
-                if isinstance(replay, ExecutionRecordDTO) and (
-                    replay.execution_id != request.execution_id
-                    or replay.task_id != request.task_id
-                    or replay.request_fingerprint != request.request_fingerprint
-                ):
-                    return _error(self._clock, "execution_repository", request.operation_id, "preflight_stale", "validation")
+                if self._store.replay_identities.get(replay_key) != identity:
+                    return _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_stale",
+                        "validation",
+                    )
                 return replay
-            existing = self._store.executions.get(request.execution_id)
-            if existing is not None:
-                return _error(self._clock, "execution_repository", request.operation_id, "execution_id_conflict", "conflict")
+            if request.execution_id in self._store.executions:
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_stale",
+                        "validation",
+                    )
+                )
             if task.version != request.expected_task_version or task.state != "ready_for_execution":
-                return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "preflight_stale", "validation"))
-            preflight = next((item for item in reversed(self._store.preflights.get(request.task_id, ())) if item.preflight_id == request.preflight_id), None)
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_stale",
+                        "validation",
+                    )
+                )
+            preflight = next(
+                (
+                    item
+                    for item in reversed(self._store.preflights.get(request.task_id, ()))
+                    if item.preflight_id == request.preflight_id
+                ),
+                None,
+            )
             if preflight is None or not preflight.ready:
-                return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "preflight_not_passed", "validation"))
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_not_passed",
+                        "validation",
+                    )
+                )
             if preflight.consumed_at is not None:
-                return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "preflight_consumed", "conflict"))
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_consumed",
+                        "conflict",
+                    )
+                )
             if self._clock.current_utc().as_datetime() >= preflight.expires_at.as_datetime():
-                return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "preflight_expired", "validation"))
-            if preflight.task_version + 1 != request.expected_task_version or preflight.input_lock_hash != request.input_lock_hash or preflight.dependency_snapshot_hash != request.dependency_snapshot_hash:
-                return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "preflight_stale", "validation"))
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_expired",
+                        "validation",
+                    )
+                )
+            if (
+                preflight.task_version + 1 != request.expected_task_version
+                or preflight.input_lock_hash != request.input_lock_hash
+                or preflight.dependency_snapshot_hash != request.dependency_snapshot_hash
+            ):
+                return remember(
+                    _error(
+                        self._clock,
+                        "execution_repository",
+                        request.operation_id,
+                        "preflight_stale",
+                        "validation",
+                    )
+                )
             scope_key = (request.trusted_user_scope, request.request_fingerprint)
             ids = self._store.quota.get(scope_key, [])
             if request.attempt_kind == "user_initial":
                 if ids:
-                    return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "formal_quota_exhausted", "quota"))
+                    return remember(
+                        _error(
+                            self._clock,
+                            "execution_repository",
+                            request.operation_id,
+                            "formal_quota_exhausted",
+                            "quota",
+                        )
+                    )
                 attempt_number = 1
             else:
                 if request.admin_authorization is None:
-                    return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "admin_authorization_required", "validation"))
+                    return remember(
+                        _error(
+                            self._clock,
+                            "execution_repository",
+                            request.operation_id,
+                            "admin_authorization_required",
+                            "validation",
+                        )
+                    )
                 if len(ids) != 1 or request.original_execution_id != ids[0]:
-                    return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "formal_quota_exhausted", "quota"))
+                    return remember(
+                        _error(
+                            self._clock,
+                            "execution_repository",
+                            request.operation_id,
+                            "formal_quota_exhausted",
+                            "quota",
+                        )
+                    )
                 original = self._store.executions.get(ids[0])
                 if (
                     original is None
@@ -360,7 +492,15 @@ class FakeExecutionRepository:
                     or original.outcome != "failed"
                     or original.failure_reason_code != request.technical_failure_code
                 ):
-                    return self._remember(request.operation_id, _error(self._clock, "execution_repository", request.operation_id, "invalid_technical_failure_code", "validation"))
+                    return remember(
+                        _error(
+                            self._clock,
+                            "execution_repository",
+                            request.operation_id,
+                            "invalid_technical_failure_code",
+                            "validation",
+                        )
+                    )
                 attempt_number = 2
             now = self._clock.current_utc()
             execution = ExecutionRecordDTO(
@@ -381,13 +521,62 @@ class FakeExecutionRepository:
                 failure_reason_code=None,
                 version=1,
             )
-            self._store.tasks[task.task_id] = replace(task, state="execution_locked", version=task.version + 1, locked_execution_id=request.execution_id)
-            history = self._store.preflights[request.task_id]
-            history[history.index(preflight)] = replace(preflight, consumed_at=now, consumed_by_execution_id=request.execution_id)
-            self._store.executions[request.execution_id] = execution
-            self._store.execution_scope[request.execution_id] = request.trusted_user_scope
-            self._store.quota[scope_key] = [*ids, request.execution_id]
-            return self._remember(request.operation_id, execution)
+            snapshot = {
+                "tasks": dict(self._store.tasks),
+                "preflights": {
+                    key: list(value) for key, value in self._store.preflights.items()
+                },
+                "executions": dict(self._store.executions),
+                "execution_scope": dict(self._store.execution_scope),
+                "quota": {key: list(value) for key, value in self._store.quota.items()},
+                "replays": dict(self._store.replays),
+                "replay_identities": dict(self._store.replay_identities),
+            }
+
+            class InjectedAcquireFault(RuntimeError):
+                pass
+
+            def inject(stage: str) -> None:
+                if (
+                    self._acquire_fault_at == stage
+                    and not self._acquire_fault_consumed
+                ):
+                    self._acquire_fault_consumed = True
+                    raise InjectedAcquireFault("non-production injected acquire failure")
+
+            try:
+                inject("before_commit")
+                self._store.tasks[task.task_id] = replace(
+                    task,
+                    state="execution_locked",
+                    version=task.version + 1,
+                    locked_execution_id=request.execution_id,
+                )
+                history = self._store.preflights[request.task_id]
+                history[history.index(preflight)] = replace(
+                    preflight,
+                    consumed_at=now,
+                    consumed_by_execution_id=request.execution_id,
+                )
+                inject("after_preflight_consume")
+                self._store.executions[request.execution_id] = execution
+                self._store.execution_scope[request.execution_id] = request.trusted_user_scope
+                self._store.quota[scope_key] = [*ids, request.execution_id]
+                remember(execution)
+                inject("after_replay_record")
+                return execution
+            except InjectedAcquireFault:
+                for name, values in snapshot.items():
+                    target = getattr(self._store, name)
+                    target.clear()
+                    target.update(values)
+                return _error(
+                    self._clock,
+                    "execution_repository",
+                    request.operation_id,
+                    "repository_unavailable",
+                    "unavailable",
+                )
 
     def get(self, request: GetExecutionRequestDTO) -> ExecutionRecordDTO | ErrorResultDTO:
         with self._store.lock:
@@ -508,19 +697,46 @@ class FakeEvidenceRepository:
 
     non_production = True
 
-    def __init__(self, clock: FakeClock) -> None:
+    def __init__(
+        self,
+        clock: FakeClock,
+        *,
+        snapshot_ttl_seconds: int | None = None,
+    ) -> None:
+        if snapshot_ttl_seconds is not None and (
+            type(snapshot_ttl_seconds) is not int or snapshot_ttl_seconds <= 0
+        ):
+            raise ValueError("snapshot_ttl_seconds must be a positive integer or None")
         self._clock = clock
+        self._snapshot_ttl_seconds = snapshot_ttl_seconds
         self._lock = RLock()
         self._evidence: dict[str, EvidenceDTO] = {}
         self._links: dict[str, EvidenceClaimLinkDTO] = {}
         self._assessments: dict[str, EvidenceAssessmentDTO] = {}
         self._snapshots: dict[
             str,
-            tuple[str, str | None, str | None, tuple[str, ...], dict[str, int]],
+            tuple[str, str | None, str | None, tuple[str, ...], dict[str, int], int],
         ] = {}
         self._issued_cursors: dict[str, set[str | None]] = {}
         self._snapshot_counter = 0
         self._replays: dict[tuple[str, str], object] = {}
+
+    @property
+    def snapshot_ttl_seconds(self) -> int | None:
+        """Explicit fake-only policy; ``None`` preserves non-expiring behavior."""
+
+        return self._snapshot_ttl_seconds
+
+    def _snapshot_expired(
+        self,
+        snapshot: tuple[
+            str, str | None, str | None, tuple[str, ...], dict[str, int], int
+        ],
+    ) -> bool:
+        if self._snapshot_ttl_seconds is None:
+            return False
+        elapsed_ms = self._clock.current_monotonic_ms() - snapshot[5]
+        return elapsed_ms >= self._snapshot_ttl_seconds * 1_000
 
     def append_evidence(self, request: AppendEvidenceRequestDTO) -> EvidenceDTO | ErrorResultDTO:
         with self._lock:
@@ -608,7 +824,10 @@ class FakeEvidenceRepository:
             if request.snapshot_token is None:
                 ids = tuple(sorted(item.evidence_id for item in self._evidence.values() if item.task_id == request.task_id and (request.source_type is None or item.source_type == request.source_type) and (request.validation_status is None or item.validation_status == request.validation_status)))
                 self._snapshot_counter += 1
-                token = f"snapshot-{self._snapshot_counter:016d}"
+                digest = hashlib.sha256(
+                    f"fake-evidence-snapshot-v1:{self._snapshot_counter}".encode("ascii")
+                ).hexdigest()
+                token = f"snapshot-{digest}"
                 assessment_max = {
                     evidence_id: max(
                         (entry.assessment_sequence for entry in self._assessments.values() if entry.evidence_id == evidence_id),
@@ -622,13 +841,18 @@ class FakeEvidenceRepository:
                     request.validation_status,
                     ids,
                     assessment_max,
+                    self._clock.current_monotonic_ms(),
                 )
                 self._issued_cursors[token] = {None}
                 offset = 0
             else:
                 token = request.snapshot_token
                 snapshot = self._snapshots.get(token)
-                if snapshot is None or snapshot[:3] != (request.task_id, request.source_type, request.validation_status):
+                if (
+                    snapshot is None
+                    or self._snapshot_expired(snapshot)
+                    or snapshot[:3] != (request.task_id, request.source_type, request.validation_status)
+                ):
                     return _error(self._clock, "evidence_repository", request.operation_id, "snapshot_expired", "validation")
                 ids = snapshot[3]
                 if request.cursor not in self._issued_cursors[token]:
@@ -646,7 +870,11 @@ class FakeEvidenceRepository:
     def get_latest_assessments(self, request: GetLatestAssessmentsRequestDTO) -> LatestAssessmentsDTO | ErrorResultDTO:
         with self._lock:
             snapshot = self._snapshots.get(request.snapshot_token)
-            if snapshot is None or snapshot[0] != request.task_id:
+            if (
+                snapshot is None
+                or self._snapshot_expired(snapshot)
+                or snapshot[0] != request.task_id
+            ):
                 return _error(self._clock, "evidence_repository", request.operation_id, "snapshot_expired", "validation")
             snapshot_ids = set(snapshot[3])
             assessment_max = snapshot[4]

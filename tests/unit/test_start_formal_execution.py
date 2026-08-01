@@ -171,6 +171,7 @@ class StartFormalExecutionTests(unittest.TestCase):
     def test_single_use_and_same_operation_replay_return_one_execution(self) -> None:
         command = start_command()
         first = self.use_case.execute(command)
+        self.clock.advance(wall_seconds=1, monotonic_ms=1_000)
         replay = self.use_case.execute(command)
         self.assertEqual(first, replay)
         self.assertEqual(1, len(self.store.executions))
@@ -228,6 +229,12 @@ class StartFormalExecutionTests(unittest.TestCase):
         )).execution
         self.assertEqual(2, rerun.attempt_number)
         self.assertEqual("TASK-002", rerun.task_id)
+        self.clock.advance(wall_seconds=1, monotonic_ms=1_000)
+        rerun_replay = self.use_case.execute(start_command(
+            "TASK-002", "PF-002", operation_id="OP-RERUN-OK", execution_id="EXEC-002",
+            is_admin=True, original_execution_id="EXEC-001", technical_failure_code="provider_timeout",
+        )).execution
+        self.assertEqual(rerun, rerun_replay)
         self.assertEqual(2, len(self.store.quota[("subject-1", HASH_A)]))
 
     def test_failed_second_attempt_opens_manual_case_and_never_creates_third(self) -> None:
@@ -248,7 +255,7 @@ class StartFormalExecutionTests(unittest.TestCase):
 
         self.assertEqual("manual_case_opened", result.outcome)
         self.assertEqual("EXEC-002", result.manual_case.execution_id)
-        self.assertEqual("repeated_technical_failure", result.manual_case.reason_code)
+        self.assertEqual("rerun_failed", result.manual_case.reason_code)
         self.assertNotIn("EXEC-003", self.store.executions)
         self.assertIsNone(self.store.preflights["TASK-003"][-1].consumed_at)
         self.assertEqual(2, len(self.store.quota[("subject-1", HASH_A)]))

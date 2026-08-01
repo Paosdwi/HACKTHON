@@ -642,5 +642,188 @@ class FrozenContractRegistryTests(unittest.TestCase):
         self.assertNotIn("CT-TASK-LOCK-EXECUTION-01", identifiers)
 
 
+class ExecutionT42AcceptanceContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.clock = FakeClock("2026-08-01T02:00:00Z", monotonic_ms=700_000)
+        self.store = FakePlatformStore()
+        self.tasks = FakeTaskRepository(self.store, self.clock)
+        self.executions = FakeExecutionRepository(self.store, self.clock)
+        self.tasks.create_or_get(task_request("OP-T42-TASK"))
+        self.tasks.append_preflight_result(preflight_request("OP-T42-PREFLIGHT"))
+
+    @staticmethod
+    def _schema_errors(method: str, request, response) -> list[object]:
+        from jsonschema import Draft202012Validator
+        from referencing import Registry, Resource
+
+        schema_root = PROJECT_ROOT / "docs" / "architecture" / "schemas"
+        common = json.loads((schema_root / "common" / "common.schema.json").read_text(encoding="utf-8"))
+        contract = json.loads((schema_root / "execution_repository" / "contract.schema.json").read_text(encoding="utf-8"))
+        registry = Registry().with_resource(common["$id"], Resource.from_contents(common))
+        envelope = {"method": method, "request": request.to_wire(), "response": response.to_wire()}
+        return list(Draft202012Validator(contract, registry=registry).iter_errors(envelope))
+
+    def test_actual_acquire_success_error_and_manual_case_validate_against_frozen_schema(self) -> None:
+        request = acquire_request("OP-T42-ACQUIRE", "EXEC-T42-001")
+        created = self.executions.acquire_quota_and_create(request)
+        self.assertEqual([], self._schema_errors("acquire_quota_and_create", request, created))
+
+        collision = replace(
+            request,
+            operation_id="OP-T42-COLLISION",
+            deadline=deadline("OP-T42-COLLISION"),
+        )
+        conflict = self.executions.acquire_quota_and_create(collision)
+        self.assertEqual("preflight_stale", conflict.error.code)
+        self.assertEqual([], self._schema_errors("acquire_quota_and_create", collision, conflict))
+
+        collecting_operation = "OP-T42-COLLECT"
+        collecting = self.executions.transition(TransitionExecutionRequestDTO(
+            collecting_operation,
+            created.execution_id,
+            created.version,
+            "created",
+            "collecting",
+            self.clock.current_utc(),
+            deadline(collecting_operation),
+        ))
+        failed_operation = "OP-T42-FAIL"
+        failed = self.executions.transition(TransitionExecutionRequestDTO(
+            failed_operation,
+            created.execution_id,
+            collecting.version,
+            "collecting",
+            "failed",
+            self.clock.current_utc(),
+            deadline(failed_operation),
+            safe_reason_code="provider_timeout",
+        ))
+        manual_request = RecordManualCaseRequestDTO(
+            "OP-T42-MANUAL",
+            failed.execution_id,
+            failed.version,
+            "rerun_failed",
+            self.clock.current_utc(),
+            deadline("OP-T42-MANUAL"),
+        )
+        manual = self.executions.record_manual_case(manual_request)
+        self.assertEqual([], self._schema_errors("record_manual_case", manual_request, manual))
+
+    def test_acquire_replay_requires_identical_payload_and_collisions_never_add_quota(self) -> None:
+        request = acquire_request("OP-T42-REPLAY", "EXEC-T42-REPLAY")
+        first = self.executions.acquire_quota_and_create(request)
+        reconstructed = replace(
+            request,
+            started_at="2026-08-01T02:00:31Z",
+            absolute_deadline_at="2026-08-01T02:15:31Z",
+        )
+        self.assertEqual(first, self.executions.acquire_quota_and_create(reconstructed))
+
+        changed_payload = replace(request, input_lock_hash=HASH_C)
+        same_operation_conflict = self.executions.acquire_quota_and_create(changed_payload)
+        self.assertEqual("preflight_stale", same_operation_conflict.error.code)
+
+        different_operation = replace(
+            request,
+            operation_id="OP-T42-DIFFERENT",
+            deadline=deadline("OP-T42-DIFFERENT"),
+        )
+        different_operation_conflict = self.executions.acquire_quota_and_create(different_operation)
+        self.assertEqual("preflight_stale", different_operation_conflict.error.code)
+        self.assertEqual(["EXEC-T42-REPLAY"], self.store.quota[("subject-1", HASH_A)])
+        self.assertEqual(1, len(self.store.executions))
+
+    def test_all_pass_bindings_and_failed_preflight_reject_without_quota(self) -> None:
+        mismatches = (
+            {"expected_task_version": 3},
+            {"input_lock_hash": HASH_A},
+            {"dependency_snapshot_hash": HASH_A},
+        )
+        for index, changes in enumerate(mismatches):
+            with self.subTest(changes=changes):
+                clock = FakeClock("2026-08-01T02:00:00Z")
+                store = FakePlatformStore()
+                tasks = FakeTaskRepository(store, clock)
+                repository = FakeExecutionRepository(store, clock)
+                tasks.create_or_get(task_request(f"OP-T42-BIND-TASK-{index}"))
+                tasks.append_preflight_result(preflight_request(f"OP-T42-BIND-PF-{index}"))
+                operation_id = f"OP-T42-BIND-ACQUIRE-{index}"
+                request = replace(
+                    acquire_request(operation_id, f"EXEC-T42-BIND-{index}"),
+                    **changes,
+                )
+                result = repository.acquire_quota_and_create(request)
+                self.assertEqual("preflight_stale", result.error.code)
+                self.assertEqual({}, store.executions)
+                self.assertEqual({}, store.quota)
+                self.assertIsNone(store.preflights["TASK-001"][-1].consumed_at)
+
+        failed_clock = FakeClock("2026-08-01T02:00:00Z")
+        failed_store = FakePlatformStore()
+        failed_tasks = FakeTaskRepository(failed_store, failed_clock)
+        failed_repository = FakeExecutionRepository(failed_store, failed_clock)
+        failed_tasks.create_or_get(task_request("OP-T42-FAILED-TASK"))
+        failed_preflight = preflight_request("OP-T42-FAILED-PF")
+        failed_tasks.append_preflight_result(replace(
+            failed_preflight,
+            record=replace(failed_preflight.record, ready=False),
+        ))
+        failed_request = acquire_request("OP-T42-FAILED-ACQUIRE", "EXEC-T42-FAILED")
+        failed = failed_repository.acquire_quota_and_create(failed_request)
+        self.assertEqual("preflight_stale", failed.error.code)
+        self.assertEqual([], self._schema_errors("acquire_quota_and_create", failed_request, failed))
+        self.assertEqual({}, failed_store.executions)
+        self.assertEqual({}, failed_store.quota)
+        self.assertIsNone(failed_store.preflights["TASK-001"][-1].consumed_at)
+
+    def test_execution_repository_rebuilds_deadline_from_receiver_monotonic_clock(self) -> None:
+        from unittest.mock import patch
+
+        from crypto_trust_agent.application.dto.common import build_local_deadline
+
+        request = acquire_request("OP-T42-LOCAL-DEADLINE", "EXEC-T42-LOCAL-DEADLINE")
+        with patch(
+            "crypto_trust_agent.infrastructure.fakes.repositories.build_local_deadline",
+            wraps=build_local_deadline,
+        ) as rebuild:
+            result = self.executions.acquire_quota_and_create(request)
+
+        self.assertFalse(hasattr(result, "error"))
+        self.assertEqual(700_000, rebuild.call_args.kwargs["now_monotonic_ms"])
+        self.assertEqual(self.clock.runtime_id, rebuild.call_args.kwargs["runtime_id"])
+        self.assertNotIn("monotonic", repr(request.to_wire()).lower())
+
+    def test_non_production_fault_injection_rolls_back_every_atomic_acquire_write(self) -> None:
+        for stage in ("before_commit", "after_preflight_consume", "after_replay_record"):
+            with self.subTest(stage=stage):
+                clock = FakeClock("2026-08-01T02:00:00Z")
+                store = FakePlatformStore()
+                tasks = FakeTaskRepository(store, clock)
+                tasks.create_or_get(task_request(f"OP-T42-FAULT-TASK-{stage.upper()}"))
+                tasks.append_preflight_result(preflight_request(f"OP-T42-FAULT-PF-{stage.upper()}"))
+                before = {
+                    "tasks": dict(store.tasks),
+                    "preflights": {key: list(value) for key, value in store.preflights.items()},
+                    "executions": dict(store.executions),
+                    "execution_scope": dict(store.execution_scope),
+                    "quota": {key: list(value) for key, value in store.quota.items()},
+                    "replays": dict(store.replays),
+                    "replay_identities": dict(store.replay_identities),
+                }
+                repository = FakeExecutionRepository(store, clock, acquire_fault_at=stage)
+                operation_id = f"OP-T42-FAULT-ACQUIRE-{stage.upper()}"
+                result = repository.acquire_quota_and_create(acquire_request(operation_id, f"EXEC-T42-{stage.upper()}"))
+
+                self.assertEqual("repository_unavailable", result.error.code)
+                self.assertNotIn("secret", repr(result.to_wire()).lower())
+                self.assertEqual(before["tasks"], store.tasks)
+                self.assertEqual(before["preflights"], store.preflights)
+                self.assertEqual(before["executions"], store.executions)
+                self.assertEqual(before["execution_scope"], store.execution_scope)
+                self.assertEqual(before["quota"], store.quota)
+                self.assertEqual(before["replays"], store.replays)
+                self.assertEqual(before["replay_identities"], store.replay_identities)
+
+
 if __name__ == "__main__":
     unittest.main()
