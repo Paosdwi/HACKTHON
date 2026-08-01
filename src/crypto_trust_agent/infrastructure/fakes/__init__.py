@@ -4,6 +4,11 @@ from crypto_trust_agent.infrastructure.fakes.artifacts import FakeArtifactReposi
 from crypto_trust_agent.infrastructure.fakes.clock import FakeClock
 from crypto_trust_agent.infrastructure.fakes.events import FakeEventPublisher
 from crypto_trust_agent.infrastructure.fakes.evidence_extractor import FakeEvidenceExtractor
+from crypto_trust_agent.infrastructure.fakes.evidence_extractor_v2 import (
+    FakeEvidenceExtractorV2,
+    LateRepairResult,
+    LocatorResolution,
+)
 from crypto_trust_agent.infrastructure.fakes.formal_run import FakeFormalRunStepExecutor
 from crypto_trust_agent.infrastructure.fakes.evidence_strategies import (
     FakeConfidenceCompositionStrategy,
@@ -34,6 +39,9 @@ __all__ = (
     "FakeDuplicateDetectionStrategy",
     "FakeEventPublisher",
     "FakeEvidenceExtractor",
+    "FakeEvidenceExtractorV2",
+    "LateRepairResult",
+    "LocatorResolution",
     "FakeEvidenceRepository",
     "FakeExecutionRepository",
     "FakeFormalRunStepExecutor",

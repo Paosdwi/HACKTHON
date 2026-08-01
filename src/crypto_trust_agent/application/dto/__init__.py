@@ -22,6 +22,13 @@ from crypto_trust_agent.application.dto.evidence_extractor import (
     UsageDTO,
     ValidationErrorDTO,
 )
+from crypto_trust_agent.application.dto.evidence_extractor_v2 import (
+    REPAIR_AUTHORIZATION_RULESET_VERSION,
+    RepairAuthorizationInputDTO,
+    RepairRequestV2DTO,
+    build_repair_authorization_hash,
+    repair_authorization_payload,
+)
 from crypto_trust_agent.application.dto.reasoning import (
     AnalysisRefDTO,
     ConclusionDTO,
@@ -65,10 +72,13 @@ __all__ = (
     "InferenceDTO",
     "OmissionDTO",
     "ProviderDTO",
+    "REPAIR_AUTHORIZATION_RULESET_VERSION",
     "ReasoningContextDTO",
     "ReasoningHealthCheckRequestDTO",
     "ReasoningRepairRequestDTO",
     "ReasoningResultDTO",
+    "RepairAuthorizationInputDTO",
+    "RepairRequestV2DTO",
     "CollectionIssueDTO",
     "CollectionResultDTO",
     "CollectRequestDTO",
@@ -95,5 +105,7 @@ __all__ = (
     "UsageDTO",
     "ValidationErrorDTO",
     "build_local_deadline",
+    "build_repair_authorization_hash",
     "map_unexpected_exception",
+    "repair_authorization_payload",
 )
