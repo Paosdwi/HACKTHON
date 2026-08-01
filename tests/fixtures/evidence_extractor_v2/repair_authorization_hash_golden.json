@@ -1,0 +1,124 @@
+{
+  "authorization_ruleset_version": "repair-authorization-1.0.0",
+  "vectors": [
+    {
+      "name": "baseline",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:f996a50c4ca775bca10a057ba1bb455def9d41c348702b314021d1e4da4089c5"
+    },
+    {
+      "name": "reordered_duplicates",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["BTC", "SOL", "BTC"],
+        "allowed_event_taxonomy": ["regulatory", "protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:f996a50c4ca775bca10a057ba1bb455def9d41c348702b314021d1e4da4089c5"
+    },
+    {
+      "name": "different_clean_content_hash",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:9a25907708d889e94aea7b34118d1c6f15de4ee130b081373631cc5a92e0db83"
+    },
+    {
+      "name": "different_assets",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["BTC", "ETH"],
+        "allowed_event_taxonomy": ["protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:ce00467ecfb191a30f1b239f85e1aa7b4c8ac1c857400768a32a07f1296ceb89"
+    },
+    {
+      "name": "different_taxonomy",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["market_event", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:62122a780136e8fed3938cc2bc28b3f2c0d54357568df8d43a98eaf6f36509a4"
+    },
+    {
+      "name": "different_ruleset_version",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.1",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_hash": "sha256:2f8bb94363d3527f7427131b0330f1f3c51868c3df72fefe291af1ffbbd3631a"
+    },
+    {
+      "name": "unicode_codepoint_sorting",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["regulatory", "protocol_update"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "expected_canonical_assets": ["BTC", "SOL"],
+      "expected_canonical_taxonomy": ["protocol_update", "regulatory"],
+      "expected_hash": "sha256:f996a50c4ca775bca10a057ba1bb455def9d41c348702b314021d1e4da4089c5"
+    },
+    {
+      "name": "sensitive_material_excluded",
+      "input": {
+        "authorization_ruleset_version": "repair-authorization-1.0.0",
+        "raw_record_id": "RAW-001",
+        "raw_content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "clean_content_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "assets": ["SOL", "BTC"],
+        "allowed_event_taxonomy": ["protocol_update", "regulatory"],
+        "output_schema_version": "1.0.0",
+        "guardrail_policy_version": "extraction-guardrail-1.0.0"
+      },
+      "excluded_sensitive_material": {
+        "locator": "https://storage.invalid/object?X-Amz-Credential=secret",
+        "clean_content": "full sensitive cleaned content",
+        "provider_payload": "vendor diagnostic token"
+      },
+      "expected_hash": "sha256:f996a50c4ca775bca10a057ba1bb455def9d41c348702b314021d1e4da4089c5"
+    }
+  ]
+}

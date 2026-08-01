@@ -31,7 +31,8 @@
 | ArtifactRepository | [`artifact_repository/contract.schema.json`](schemas/artifact_repository/contract.schema.json) | `put`, `get`, `list_for_execution`, `put_manifest`, `get_manifest` | `CT-ART-PUT-01`, `CT-ART-GET-01`, `CT-ART-LIST-01`, `CT-ART-PUT-MANIFEST-01`, `CT-ART-GET-MANIFEST-01` |
 | EventPublisher | [`event_publisher/contract.schema.json`](schemas/event_publisher/contract.schema.json) | `publish`, `publish_batch` | `CT-EVENT-PUBLISH-01`, `CT-EVENT-BATCH-01` |
 | SourceCollector | [`source_collector/contract.schema.json`](schemas/source_collector/contract.schema.json) | `collect`, `health_check`, `capabilities` | `CT-COLLECT-COLLECT-01`, `CT-COLLECT-HEALTH-01`, `CT-COLLECT-CAPABILITIES-01` |
-| EvidenceExtractor | [`evidence_extractor/contract.schema.json`](schemas/evidence_extractor/contract.schema.json) | `extract`, `repair`, `health_check` | `CT-EXTRACT-EXTRACT-01`, `CT-EXTRACT-REPAIR-01`, `CT-EXTRACT-HEALTH-01` |
+| EvidenceExtractor 1.0.0 (frozen) | [`evidence_extractor/contract.schema.json`](schemas/evidence_extractor/contract.schema.json) | `extract`, quarantine-only `repair`, `health_check` | `CT-EXTRACT-EXTRACT-01`, `CT-EXTRACT-REPAIR-01`, `CT-EXTRACT-HEALTH-01` |
+| EvidenceExtractor 2.0.0 | [`evidence_extractor_v2/contract.schema.json`](schemas/evidence_extractor_v2/contract.schema.json) | unchanged `extract`, authoritative successful `repair`, unchanged `health_check` | `CT-EXTRACT-EXTRACT-01`, `CT-EXTRACT-REPAIR-02`, `CT-EXTRACT-HEALTH-01` |
 | MarketRegimeProvider | [`market_regime_provider/contract.schema.json`](schemas/market_regime_provider/contract.schema.json) | `infer`, `health_check` | `CT-MARKET-INFER-01`, `CT-MARKET-HEALTH-01` |
 | ReasoningProvider | [`reasoning_provider/contract.schema.json`](schemas/reasoning_provider/contract.schema.json) | `generate`, `repair`, `health_check` | `CT-REASON-GENERATE-01`, `CT-REASON-REPAIR-01`, `CT-REASON-HEALTH-01` |
 | Clock | [`clock/contract.schema.json`](schemas/clock/contract.schema.json) | `now_utc`, `monotonic_ms` | `CT-CLOCK-UTC-01`, `CT-CLOCK-MONOTONIC-01` |
@@ -44,7 +45,8 @@ Examples：
 - [`ArtifactRepository valid`](schemas/artifact_repository/valid-examples.json) / [`invalid`](schemas/artifact_repository/invalid-examples.json)
 - [`EventPublisher valid`](schemas/event_publisher/valid-examples.json) / [`invalid`](schemas/event_publisher/invalid-examples.json)
 - [`SourceCollector valid`](schemas/source_collector/valid-examples.json) / [`invalid`](schemas/source_collector/invalid-examples.json)
-- [`EvidenceExtractor valid`](schemas/evidence_extractor/valid-examples.json) / [`invalid`](schemas/evidence_extractor/invalid-examples.json)
+- [`EvidenceExtractor 1.0.0 valid`](schemas/evidence_extractor/valid-examples.json) / [`invalid`](schemas/evidence_extractor/invalid-examples.json)
+- [`EvidenceExtractor 2.0.0 valid`](schemas/evidence_extractor_v2/valid-examples.json) / [`invalid`](schemas/evidence_extractor_v2/invalid-examples.json)
 - [`MarketRegimeProvider valid`](schemas/market_regime_provider/valid-examples.json) / [`invalid`](schemas/market_regime_provider/invalid-examples.json)
 - [`ReasoningProvider valid`](schemas/reasoning_provider/valid-examples.json) / [`invalid`](schemas/reasoning_provider/invalid-examples.json)
 - [`Clock valid`](schemas/clock/valid-examples.json) / [`invalid`](schemas/clock/invalid-examples.json)
@@ -61,7 +63,8 @@ Examples：
 | ArtifactRepository | per file 5s；final write 20s target + 5s buffer；publication use case retry | same logical key/hash no-op；different hash conflict；Manifest last |
 | EventPublisher | publish 2s、batch 3s；Application retry | at-least-once；event ID dedup；same ID/different payload conflict |
 | SourceCollector | connect 3s、read 10s、static 15s、Playwright 30s；orchestrator retry owner | completed operation replay；new fetch requires new operation ID；per-host concurrency 2 |
-| EvidenceExtractor | repair ≤20s once；Core retry/repair owner | operation + raw hash + model/schema/ruleset identify invocation；invalid after repair quarantined |
+| EvidenceExtractor 1.0.0 | repair ≤20s once；Core retry/repair owner | `CT-EXTRACT-REPAIR-01` remains quarantine-only；operation + raw/context identity；invalid after repair quarantined |
+| EvidenceExtractor 2.0.0 | aggregate repair ≤20s once；Core retry/repair owner；adapter attempt 1／hidden retry 0 | `CT-EXTRACT-REPAIR-02` binds operation + `repair_authorization_hash`；same authority replay、different authority conflict；v2 failure never downgrades to v1 success |
 | MarketRegimeProvider | infer ≤25s、zero retry、5s Core fallback reserve | stateless inference；operation + feature hash + model identify invocation |
 | ReasoningProvider | primary repair ≤60s once；Core controls fallback | operation + context hash + model role/version identify invocation；no provider tools/network/DB/secrets |
 | Clock | local synchronous；no retry | reads side-effect free；monotonic only within `runtime_id`，never across process |
@@ -123,13 +126,13 @@ Normal bundle 目標維持全部格式。Degraded publication 的最低 bundle�
 
 本輪離線驗證使用 `jsonschema.Draft202012Validator.check_schema` 與 `referencing.Registry`：
 
-- schemas：11（common + 十個 Port）
-- Port contracts：10
-- stable method contract IDs：37
-- valid examples：37/37 accepted
-- invalid examples：37/37 rejected
+- schemas：12（common + 十個 frozen 1.0.0 Port schema + EvidenceExtractor 2.0.0 sibling schema）
+- Port capabilities：10；machine-readable contract versions：11
+- unique stable method contract IDs：38（原 37 個保持不變，新增 `CT-EXTRACT-REPAIR-02`）
+- valid examples：45/45 accepted（既有 37 + EvidenceExtractor 2.0.0 的 8）
+- invalid examples：57/57 handled（既有 37 個 schema-invalid + v2 的 16 個 schema-invalid／4 個 semantic-invalid）
 - failures：0
 
-Shared semantic assertions 另驗證 JSON Schema 無法完整表達的 Evidence offset range/token TTL-expiry consistency、Reasoning citation/reference graph，以及 Artifact Manifest available/missing/reason/self-exclusion 跨欄 invariant。
+Shared semantic assertions 另驗證 JSON Schema 無法完整表達的 Evidence offset range/token TTL-expiry consistency、Reasoning citation/reference graph、Artifact Manifest available/missing/reason/self-exclusion，以及 EvidenceExtractor v2 authorization hash、quote grounding、asset/taxonomy scope、deadline、replay 與 late-result isolation。
 
 此結果證明 Draft 2020-12 結構、examples 與 shared semantic assertions 一致；不會把任何 Proposed ADR 自動升為 Approved。`lock_for_execution`/`CT-TASK-LOCK-EXECUTION-01` 的移除是避免禁止的分步交易之 breaking draft change，仍待人工核准；OQ-B004 在 human schema review 前仍是 blocking。

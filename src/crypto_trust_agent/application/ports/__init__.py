@@ -2,6 +2,10 @@
 
 from crypto_trust_agent.application.dto.source_collector import CollectorHealthCheckRequestDTO
 from crypto_trust_agent.application.ports.evidence_extractor import EvidenceExtractor
+from crypto_trust_agent.application.ports.evidence_extractor_v2 import (
+    EvidenceExtractorV2,
+    negotiate_evidence_extractor_version,
+)
 from crypto_trust_agent.application.ports.evidence_strategies import (
     ConfidenceCompositionStrategy,
     ContradictionDetectionStrategy,
@@ -39,6 +43,7 @@ __all__ = (
     "DuplicateDetectionStrategy",
     "EventPublisher",
     "EvidenceExtractor",
+    "EvidenceExtractorV2",
     "EvidenceRepository",
     "ExecutionRepository",
     "HealthCheckPort",
@@ -54,4 +59,5 @@ __all__ = (
     "TaskReadinessRequestDTO",
     "TaskRepository",
     "TrustComponentStrategy",
+    "negotiate_evidence_extractor_version",
 )
