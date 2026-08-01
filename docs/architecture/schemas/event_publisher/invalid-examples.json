@@ -1,0 +1,7 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/event-publisher/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-EVENT-PUBLISH-N01","expected":"required","value":{"method":"publish","request":{},"response":{}}},
+    {"test_id":"CT-EVENT-BATCH-N01","expected":"required","value":{"method":"publish_batch","request":{},"response":{}}}
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cryptotrust.local/ports/task-repository/1.0.0/contract.schema.json",
+  "title": "TaskRepository Port contract",
+  "x-contract-version": "1.0.0",
+  "x-port-policy": {
+    "retry_owner": "application",
+    "hidden_adapter_retries": false,
+    "default_timeout_ms": 2000,
+    "concurrency": "conditional writes; one created result per active user/fingerprint window",
+    "idempotency": "operation_id replay returns the original logical result"
+  },
+  "x-error-codes": ["task_not_found", "task_version_conflict", "task_create_rate_limited", "preflight_rate_limited", "fingerprint_index_conflict", "preflight_not_passed", "preflight_expired", "preflight_consumed", "repository_unavailable", "deadline_exceeded", "unexpected_provider_error"],
+  "oneOf": [
+    { "$ref": "#/$defs/ConsumeTaskCreateSlotOperation" },
+    { "$ref": "#/$defs/CreateOrGetOperation" },
+    { "$ref": "#/$defs/GetOperation" },
+    { "$ref": "#/$defs/ConsumePreflightSlotOperation" },
+    { "$ref": "#/$defs/AppendPreflightResultOperation" },
+    { "$ref": "#/$defs/GetLatestPreflightOperation" }
+  ],
+  "$defs": {
+    "Deadline": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/DeadlineDTO" },
+    "OperationId": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/OperationId" },
+    "TaskId": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/TaskId" },
+    "Utc": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/UtcInstant" },
+    "ConsumeTaskCreateSlotErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_create_rate_limited","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "CreateOrGetErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_version_conflict","fingerprint_index_conflict","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "GetErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_not_found","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "ConsumePreflightSlotErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_not_found","preflight_rate_limited","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "AppendPreflightResultErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_not_found","task_version_conflict","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "GetLatestPreflightErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["task_not_found","preflight_not_passed","preflight_expired","preflight_consumed","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}}}}}]},
+    "TimeframeDTO": {
+      "type": "object", "additionalProperties": false, "required": ["start", "end"],
+      "properties": { "start": { "$ref": "#/$defs/Utc" }, "end": { "$ref": "#/$defs/Utc" } }
+    },
+    "PlanReferenceDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["plan_id", "ruleset_version", "canonical_hash"],
+      "properties": {
+        "plan_id": { "type": "string", "pattern": "^PLAN-[A-Za-z0-9._:-]{1,122}$" },
+        "ruleset_version": { "type": "string", "pattern": "^[a-z0-9_-]+-[0-9]+\\.[0-9]+\\.[0-9]+$" },
+        "canonical_hash": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" }
+      }
+    },
+    "ProposedTaskDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["task_id", "question", "assets_requested_order", "assets_canonical", "timeframe", "question_type", "formal_run_intent", "sourcing_plan", "analysis_plan", "created_at"],
+      "properties": {
+        "task_id": { "$ref": "#/$defs/TaskId" },
+        "question": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "assets_requested_order": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Assets" },
+        "assets_canonical": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Assets" },
+        "timeframe": { "$ref": "#/$defs/TimeframeDTO" },
+        "question_type": { "enum": ["market_status", "hypothesis_validation", "asset_comparison"] },
+        "formal_run_intent": { "type": "boolean" },
+        "sourcing_plan": { "$ref": "#/$defs/PlanReferenceDTO" },
+        "analysis_plan": { "$ref": "#/$defs/PlanReferenceDTO" },
+        "created_at": { "$ref": "#/$defs/Utc" }
+      }
+    },
+    "TaskRecordDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "task_id", "trusted_user_scope", "request_fingerprint", "fingerprint_ruleset_version", "state", "version", "created_at", "locked_execution_id"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" },
+        "task_id": { "$ref": "#/$defs/TaskId" },
+        "trusted_user_scope": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "request_fingerprint": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" },
+        "fingerprint_ruleset_version": { "const": "fingerprint-1.0.0" },
+        "state": { "enum": ["ready_for_preflight", "preflight_failed", "ready_for_execution", "execution_locked", "closed"] },
+        "version": { "type": "integer", "minimum": 1 },
+        "created_at": { "$ref": "#/$defs/Utc" },
+        "locked_execution_id": { "oneOf": [{ "type": "null" }, { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ExecutionId" }] }
+      }
+    },
+    "RateLimitDecisionDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "allowed", "scope", "limit", "remaining", "window_seconds", "retry_after_seconds"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "allowed": { "type": "boolean" },
+        "scope": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "limit": { "type": "integer", "minimum": 1 }, "remaining": { "type": "integer", "minimum": 0 },
+        "window_seconds": { "type": "integer", "minimum": 1 }, "retry_after_seconds": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "PreflightCheckDTO": {
+      "type": "object", "additionalProperties": false, "required": ["name", "required", "status", "safe_reason_code"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" }, "required": { "type": "boolean" },
+        "status": { "enum": ["healthy", "degraded", "unhealthy", "not_configured"] },
+        "safe_reason_code": { "oneOf": [{ "type": "null" }, { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/SafeCode" }] }
+      }
+    },
+    "DependencySnapshotItemDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["name", "capability_version", "status", "checked_at"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+        "capability_version": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "status": { "enum": ["healthy", "degraded", "unhealthy", "not_configured"] },
+        "checked_at": { "$ref": "#/$defs/Utc" }
+      }
+    },
+    "DependencySnapshotDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["items"],
+      "properties": {
+        "items": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/DependencySnapshotItemDTO" } }
+      }
+    },
+    "PreflightRecordDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "preflight_id", "task_id", "task_version", "input_lock_hash", "dependency_snapshot_hash", "checked_at", "expires_at", "ttl_seconds", "ready", "checks", "dependency_snapshot", "consumed_at", "consumed_by_execution_id"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "preflight_id": { "type": "string", "pattern": "^PF-[A-Za-z0-9._:-]{1,125}$" },
+        "task_id": { "$ref": "#/$defs/TaskId" }, "task_version": { "type": "integer", "minimum": 1 },
+        "input_lock_hash": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" },
+        "dependency_snapshot_hash": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" },
+        "checked_at": { "$ref": "#/$defs/Utc" }, "expires_at": { "$ref": "#/$defs/Utc" }, "ttl_seconds": { "type": "integer", "const": 60 }, "ready": { "type": "boolean" },
+        "checks": { "type": "array", "minItems": 1, "maxItems": 64, "items": { "$ref": "#/$defs/PreflightCheckDTO" } },
+        "dependency_snapshot": { "$ref": "#/$defs/DependencySnapshotDTO" },
+        "consumed_at": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/Utc" }] },
+        "consumed_by_execution_id": { "oneOf": [{ "type": "null" }, { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ExecutionId" }] }
+      },
+      "x-semantic-constraints": [{"rule":"expires_at_equals_checked_at_plus_ttl","ttl_seconds":60,"shared_semantic_assertion_required":true}]
+    },
+    "ConsumeTaskCreateSlotRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "trusted_user_scope", "principal_subject_hash", "deadline"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" },
+        "trusted_user_scope": { "type": "string", "minLength": 1, "maxLength": 128 }, "principal_subject_hash": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "deadline": { "$ref": "#/$defs/Deadline" }
+      }
+    },
+    "CreateOrGetRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "trusted_user_scope", "principal_subject_hash", "request_fingerprint", "fingerprint_ruleset_version", "idempotency_window_started_at", "idempotency_window_seconds", "proposed_task", "deadline"],
+      "properties": {
+        "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" },
+        "trusted_user_scope": { "type": "string", "minLength": 1, "maxLength": 128 }, "principal_subject_hash": { "type": "string", "minLength": 16, "maxLength": 128 },
+        "request_fingerprint": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" }, "fingerprint_ruleset_version": { "const": "fingerprint-1.0.0" },
+        "idempotency_window_started_at": { "$ref": "#/$defs/Utc" }, "idempotency_window_seconds": { "type": "integer", "const": 86400 },
+        "proposed_task": { "$ref": "#/$defs/ProposedTaskDTO" }, "deadline": { "$ref": "#/$defs/Deadline" }
+      }
+    },
+    "CreateOrGetResponse": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "outcome", "task", "window_expires_at"],
+      "properties": { "schema_version": { "const": "1.0.0" }, "outcome": { "enum": ["created", "reused"] }, "task": { "$ref": "#/$defs/TaskRecordDTO" }, "window_expires_at": { "$ref": "#/$defs/Utc" } }
+    },
+    "TaskQueryRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "trusted_user_scope", "task_id", "deadline"],
+      "properties": { "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" }, "trusted_user_scope": { "type": "string", "minLength": 1, "maxLength": 128 }, "task_id": { "$ref": "#/$defs/TaskId" }, "deadline": { "$ref": "#/$defs/Deadline" } }
+    },
+    "ConsumePreflightSlotRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "trusted_user_scope", "task_id", "deadline"],
+      "properties": { "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" }, "trusted_user_scope": { "type": "string", "minLength": 1, "maxLength": 128 }, "task_id": { "$ref": "#/$defs/TaskId" }, "deadline": { "$ref": "#/$defs/Deadline" } }
+    },
+    "AppendPreflightResultRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "expected_task_version", "record", "deadline"],
+      "properties": { "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" }, "expected_task_version": { "type": "integer", "minimum": 1 }, "record": { "$ref": "#/$defs/PreflightRecordDTO" }, "deadline": { "$ref": "#/$defs/Deadline" } }
+    },
+    "GetLatestPreflightRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "task_id", "task_version", "input_lock_hash", "deadline"],
+      "properties": { "schema_version": { "const": "1.0.0" }, "operation_id": { "$ref": "#/$defs/OperationId" }, "task_id": { "$ref": "#/$defs/TaskId" }, "task_version": { "type": "integer", "minimum": 1 }, "input_lock_hash": { "$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256" }, "deadline": { "$ref": "#/$defs/Deadline" } }
+    },
+    "ConsumeTaskCreateSlotOperation": { "x-contract-test-id": "CT-TASK-CONSUME-CREATE-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"operation_replay","key_fields":["operation_id"]},"concurrency":{"mode":"atomic_rate_counter"},"semantic_invariants":["rate_limit_counts_before_fingerprint_reuse"],"error_codes":["task_create_rate_limited","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "consume_task_create_slot" }, "request": { "$ref": "#/$defs/ConsumeTaskCreateSlotRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/RateLimitDecisionDTO" }, { "$ref": "#/$defs/ConsumeTaskCreateSlotErrorResult" }] } } },
+    "CreateOrGetOperation": { "x-contract-test-id": "CT-TASK-CREATE-OR-GET-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"operation_and_fingerprint_window","key_fields":["operation_id","trusted_user_scope","request_fingerprint"]},"concurrency":{"mode":"conditional_unique_fingerprint_window"},"error_codes":["task_version_conflict","fingerprint_index_conflict","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "create_or_get" }, "request": { "$ref": "#/$defs/CreateOrGetRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/CreateOrGetResponse" }, { "$ref": "#/$defs/CreateOrGetErrorResult" }] } } },
+    "GetOperation": { "x-contract-test-id": "CT-TASK-GET-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"side_effect_free_read","key_fields":["trusted_user_scope","task_id"]},"concurrency":{"mode":"consistent_read"},"error_codes":["task_not_found","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "get" }, "request": { "$ref": "#/$defs/TaskQueryRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/TaskRecordDTO" }, { "$ref": "#/$defs/GetErrorResult" }] } } },
+    "ConsumePreflightSlotOperation": { "x-contract-test-id": "CT-TASK-CONSUME-PREFLIGHT-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"operation_replay","key_fields":["operation_id"]},"concurrency":{"mode":"atomic_task_scoped_rate_counter"},"error_codes":["task_not_found","preflight_rate_limited","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "consume_preflight_slot" }, "request": { "$ref": "#/$defs/ConsumePreflightSlotRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/RateLimitDecisionDTO" }, { "$ref": "#/$defs/ConsumePreflightSlotErrorResult" }] } } },
+    "AppendPreflightResultOperation": { "x-contract-test-id": "CT-TASK-APPEND-PREFLIGHT-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"operation_and_preflight_identity","key_fields":["operation_id","record.preflight_id"]},"concurrency":{"mode":"conditional_task_version_write"},"semantic_invariants":["expires_at_equals_checked_at_plus_60_seconds"],"error_codes":["task_not_found","task_version_conflict","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "append_preflight_result" }, "request": { "$ref": "#/$defs/AppendPreflightResultRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/PreflightRecordDTO" }, { "$ref": "#/$defs/AppendPreflightResultErrorResult" }] } } },
+    "GetLatestPreflightOperation": { "x-contract-test-id": "CT-TASK-GET-PREFLIGHT-01", "x-method-policy":{"timeout_ms":2000,"retry_owner":"application","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"side_effect_free_read","key_fields":["task_id","task_version","input_lock_hash"]},"concurrency":{"mode":"latest_matching_consistent_read"},"semantic_invariants":["task_version_and_input_lock_hash_match","single_use_state_visible"],"error_codes":["task_not_found","preflight_not_passed","preflight_expired","preflight_consumed","repository_unavailable","deadline_exceeded","unexpected_provider_error"]}, "type": "object", "additionalProperties": false, "required": ["method", "request", "response"], "properties": { "method": { "const": "get_latest_preflight" }, "request": { "$ref": "#/$defs/GetLatestPreflightRequest" }, "response": { "oneOf": [{ "$ref": "#/$defs/PreflightRecordDTO" }, { "$ref": "#/$defs/GetLatestPreflightErrorResult" }] } } }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/execution-repository/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-EXEC-ACQUIRE-N01","expected":"legacy_task_input_hash_forbidden","value":{"method":"acquire_quota_and_create","request":{"task_input_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"response":{}}},
+    {"test_id":"CT-EXEC-GET-N01","expected":"required","value":{"method":"get","request":{},"response":{}}},
+    {"test_id":"CT-EXEC-TRANSITION-N01","expected":"required","value":{"method":"transition","request":{},"response":{}}},
+    {"test_id":"CT-EXEC-MANUAL-CASE-N01","expected":"required","value":{"method":"record_manual_case","request":{},"response":{}}},
+    {"test_id":"CT-EXEC-LIST-QUOTA-N01","expected":"required","value":{"method":"list_by_quota_scope","request":{},"response":{}}}
+  ]
+}

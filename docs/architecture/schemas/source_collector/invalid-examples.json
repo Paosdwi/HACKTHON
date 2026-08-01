@@ -1,0 +1,8 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/source-collector/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-COLLECT-COLLECT-N01","expected":"required","value":{"method":"collect","request":{},"response":{}}},
+    {"test_id":"CT-COLLECT-HEALTH-N01","expected":"required","value":{"method":"health_check","request":{},"response":{}}},
+    {"test_id":"CT-COLLECT-CAPABILITIES-N01","expected":"required","value":{"method":"capabilities","request":{},"response":{}}}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "contract": "https://schemas.cryptotrust.local/ports/task-repository/1.0.0/contract.schema.json",
+  "examples": [
+    {"test_id":"CT-TASK-CONSUME-CREATE-N01","expected":"required","value":{"method":"consume_task_create_slot","request":{},"response":{}}},
+    {"test_id":"CT-TASK-CREATE-OR-GET-N01","expected":"required","value":{"method":"create_or_get","request":{},"response":{}}},
+    {"test_id":"CT-TASK-GET-N01","expected":"required","value":{"method":"get","request":{},"response":{}}},
+    {"test_id":"CT-TASK-CONSUME-PREFLIGHT-N01","expected":"required","value":{"method":"consume_preflight_slot","request":{},"response":{}}},
+    {"test_id":"CT-TASK-APPEND-PREFLIGHT-N01","expected":"required","value":{"method":"append_preflight_result","request":{},"response":{}}},
+    {"test_id":"CT-TASK-GET-PREFLIGHT-N01","expected":"legacy_input_hash_forbidden","value":{"method":"get_latest_preflight","request":{"input_hash":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"},"response":{}}}
+  ]
+}

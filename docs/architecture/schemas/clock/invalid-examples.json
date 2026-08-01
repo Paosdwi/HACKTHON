@@ -1,0 +1,7 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/clock/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-CLOCK-UTC-N01","expected":"required","value":{"method":"now_utc","request":{},"response":{}}},
+    {"test_id":"CT-CLOCK-MONOTONIC-N01","expected":"required","value":{"method":"monotonic_ms","request":{},"response":{}}}
+  ]
+}

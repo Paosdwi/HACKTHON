@@ -1,0 +1,8 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/reasoning-provider/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-REASON-GENERATE-N01","expected":"fact_requires_evidence_or_analysis_reference","value":{"method":"generate","request":{"schema_version":"1.0.0","operation_id":"OP-RSN-N01","task_id":"TASK-001","execution_id":"EXEC-001","model_role":"primary","context":{"schema_version":"1.0.0","question":"What is the BTC market status?","evidence_refs":[],"analysis_refs":[],"contradictions":[],"limitations":[],"omissions":[]},"context_hash":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","output_schema_version":"1.0.0","guardrail_policy_version":"reasoning-guardrail-1.0.0","deadline":{"schema_version":"1.0.0","operation_id":"OP-RSN-N01","deadline_at_utc":"2026-08-01T02:13:00Z","budget_ms":60000,"sent_at_utc":"2026-08-01T02:12:00Z","safety_margin_ms":1000}},"response":{"schema_version":"1.0.0","outcome":"valid","provider":{"name":"reasoning_model","model_version":"v1","model_role":"primary","invocation_id":"INV-RSN-N01"},"facts":[{"fact_id":"FACT-N01","statement":"Uncited fact","evidence_refs":[],"analysis_refs":[]}],"inferences":[],"conclusions":[],"limitations":[],"watchpoints":[],"confidence_components":{"evidence_quality":"0","consistency":"0","coverage":"0","overall":"0"},"validation_diagnostics":[],"started_at":"2026-08-01T02:12:00Z","finished_at":"2026-08-01T02:12:20Z"}}},
+    {"test_id":"CT-REASON-REPAIR-N01","expected":"required","value":{"method":"repair","request":{},"response":{}}},
+    {"test_id":"CT-REASON-HEALTH-N01","expected":"required","value":{"method":"health_check","request":{},"response":{}}}
+  ]
+}

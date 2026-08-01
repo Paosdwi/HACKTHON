@@ -1,0 +1,7 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/clock/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-CLOCK-UTC-01","value":{"method":"now_utc","request":{"schema_version":"1.0.0","operation_id":"OP-CLOCK-01"},"response":{"schema_version":"1.0.0","utc":"2026-08-01T02:00:00Z"}}},
+    {"test_id":"CT-CLOCK-MONOTONIC-01","value":{"method":"monotonic_ms","request":{"schema_version":"1.0.0","operation_id":"OP-CLOCK-02"},"response":{"schema_version":"1.0.0","runtime_id":"runtime-00000001","monotonic_ms":123456789}}}
+  ]
+}

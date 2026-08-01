@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://schemas.cryptotrust.local/ports/clock/1.0.0/contract.schema.json",
+  "title":"Clock Port contract",
+  "x-contract-version":"1.0.0",
+  "x-port-policy":{"retry_owner":"none","hidden_adapter_retries":false,"timeouts_ms":{"now_utc":1000,"monotonic_ms":1000},"timeout_scope":"bounded local boundary call; no network or provider I/O","idempotency":"reads have no side effects","concurrency":"thread-safe reads; monotonic value never decreases within one runtime","distributed_boundary":"monotonic_ms never crosses a process boundary and is never compared across runtimes","unexpected_provider_error_semantics":"unexpected boundary implementation failure; not a provider failure"},
+  "x-error-codes":["clock_unavailable","unexpected_provider_error"],
+  "oneOf":[{"$ref":"#/$defs/NowUtcOperation"},{"$ref":"#/$defs/MonotonicOperation"}],
+  "$defs":{
+    "OperationId":{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/OperationId"},"Utc":{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/UtcInstant"},
+    "NowUtcErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["clock_unavailable","unexpected_provider_error"]}}}}}]},
+    "MonotonicErrorResult":{"allOf":[{"$ref":"https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},{"properties":{"error":{"properties":{"code":{"enum":["clock_unavailable","unexpected_provider_error"]}}}}}]},
+    "ClockReadRequestDTO":{"type":"object","additionalProperties":false,"required":["schema_version","operation_id"],"properties":{"schema_version":{"const":"1.0.0"},"operation_id":{"$ref":"#/$defs/OperationId"}}},
+    "UtcInstantDTO":{"type":"object","additionalProperties":false,"required":["schema_version","utc"],"properties":{"schema_version":{"const":"1.0.0"},"utc":{"$ref":"#/$defs/Utc"}}},
+    "MonotonicInstantDTO":{"type":"object","additionalProperties":false,"required":["schema_version","runtime_id","monotonic_ms"],"properties":{"schema_version":{"const":"1.0.0"},"runtime_id":{"type":"string","minLength":16,"maxLength":128},"monotonic_ms":{"type":"integer","minimum":0}}},
+    "NowUtcOperation":{"x-contract-test-id":"CT-CLOCK-UTC-01","x-method-policy":{"timeout_ms":1000,"retry_owner":"none","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"side_effect_free_read","key_fields":[]},"concurrency":{"mode":"thread_safe_read"},"semantic_invariants":["utc_rfc3339_z","unexpected_provider_error_means_boundary_implementation_failure"],"error_codes":["clock_unavailable","unexpected_provider_error"]},"type":"object","additionalProperties":false,"required":["method","request","response"],"properties":{"method":{"const":"now_utc"},"request":{"$ref":"#/$defs/ClockReadRequestDTO"},"response":{"oneOf":[{"$ref":"#/$defs/UtcInstantDTO"},{"$ref":"#/$defs/NowUtcErrorResult"}]}}},
+    "MonotonicOperation":{"x-contract-test-id":"CT-CLOCK-MONOTONIC-01","x-method-policy":{"timeout_ms":1000,"retry_owner":"none","max_attempts":1,"hidden_adapter_retries":false,"idempotency":{"mode":"side_effect_free_read","key_fields":[]},"concurrency":{"mode":"thread_safe_monotonic_read"},"semantic_invariants":["nondecreasing_within_runtime","never_cross_process_boundary","unexpected_provider_error_means_boundary_implementation_failure"],"error_codes":["clock_unavailable","unexpected_provider_error"]},"type":"object","additionalProperties":false,"required":["method","request","response"],"properties":{"method":{"const":"monotonic_ms"},"request":{"$ref":"#/$defs/ClockReadRequestDTO"},"response":{"oneOf":[{"$ref":"#/$defs/MonotonicInstantDTO"},{"$ref":"#/$defs/MonotonicErrorResult"}]}}}
+  }
+}

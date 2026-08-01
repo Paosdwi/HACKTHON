@@ -1,0 +1,8 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/evidence-extractor/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-EXTRACT-EXTRACT-N01","expected":"required","value":{"method":"extract","request":{},"response":{}}},
+    {"test_id":"CT-EXTRACT-REPAIR-N01","expected":"required","value":{"method":"repair","request":{},"response":{}}},
+    {"test_id":"CT-EXTRACT-HEALTH-N01","expected":"required","value":{"method":"health_check","request":{},"response":{}}}
+  ]
+}

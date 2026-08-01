@@ -1,0 +1,7 @@
+{
+  "contract":"https://schemas.cryptotrust.local/ports/market-regime-provider/1.0.0/contract.schema.json",
+  "examples":[
+    {"test_id":"CT-MARKET-INFER-N01","expected":"required","value":{"method":"infer","request":{},"response":{}}},
+    {"test_id":"CT-MARKET-HEALTH-N01","expected":"required","value":{"method":"health_check","request":{},"response":{}}}
+  ]
+}

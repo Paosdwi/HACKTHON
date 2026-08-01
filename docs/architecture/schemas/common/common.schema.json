@@ -1,0 +1,105 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json",
+  "title": "CryptoTrust common contract types",
+  "type": "object",
+  "additionalProperties": true,
+  "oneOf": [
+    { "$ref": "#/$defs/DeadlineDTO" },
+    { "$ref": "#/$defs/PortErrorDTO" },
+    { "$ref": "#/$defs/ProviderHealthDTO" }
+  ],
+  "$defs": {
+    "SchemaVersion": { "type": "string", "const": "1.0.0" },
+    "OperationId": { "type": "string", "pattern": "^OP-[A-Z0-9][A-Z0-9._:-]{0,126}$" },
+    "OpaqueId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]*$" },
+    "TaskId": { "type": "string", "pattern": "^TASK-[A-Za-z0-9._:-]{1,123}$" },
+    "ExecutionId": { "type": "string", "pattern": "^EXEC-[A-Za-z0-9._:-]{1,123}$" },
+    "UtcInstant": { "type": "string", "format": "date-time", "pattern": "Z$" },
+    "UtcDate": { "type": "string", "format": "date" },
+    "Sha256": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "LowerHexSha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "HttpsUri": { "type": "string", "format": "uri", "pattern": "^https://", "maxLength": 2048 },
+    "OpaqueUri": { "type": "string", "format": "uri", "maxLength": 4096 },
+    "Asset": { "type": "string", "pattern": "^[A-Z0-9][A-Z0-9._-]{0,31}$" },
+    "Assets": { "type": "array", "minItems": 1, "maxItems": 100, "uniqueItems": true, "items": { "$ref": "#/$defs/Asset" } },
+    "CanonicalDecimal": {
+      "type": "string",
+      "pattern": "^(?:(?=(?:[^0-9]*[0-9]){1,38}[^0-9]*$)(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,17}[1-9])?|-(?=(?:[^0-9]*[0-9]){1,38}[^0-9]*$)(?!0$)(?:0|[1-9][0-9]*)(?:\\.[0-9]{0,17}[1-9])?)$",
+      "x-precision": 38,
+      "x-scale": 18
+    },
+    "NonNegativeDecimal": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalDecimal" },
+        { "pattern": "^(0|[1-9][0-9]{0,37})(\\.[0-9]{0,17}[1-9])?$" }
+      ]
+    },
+    "Probability": {
+      "allOf": [
+        { "$ref": "#/$defs/CanonicalDecimal" },
+        { "pattern": "^(0(\\.[0-9]{0,17}[1-9])?|1)$" }
+      ]
+    },
+    "SafeCode": { "type": "string", "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+    "SafeText": { "type": "string", "minLength": 1, "maxLength": 512 },
+    "StringMap": {
+      "type": "object",
+      "maxProperties": 64,
+      "additionalProperties": { "type": ["string", "integer", "boolean", "null"] }
+    },
+    "DeadlineDTO": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "deadline_at_utc", "budget_ms", "sent_at_utc", "safety_margin_ms"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+        "operation_id": { "$ref": "#/$defs/OperationId" },
+        "deadline_at_utc": { "$ref": "#/$defs/UtcInstant" },
+        "budget_ms": { "type": "integer", "minimum": 1, "maximum": 900000 },
+        "sent_at_utc": { "$ref": "#/$defs/UtcInstant" },
+        "safety_margin_ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 1000 }
+      }
+    },
+    "PortErrorDTO": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "code", "category", "retryable", "safe_message", "provider", "operation_id", "details", "occurred_at"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+        "code": { "$ref": "#/$defs/SafeCode" },
+        "category": { "enum": ["validation", "not_found", "conflict", "rate_limited", "timeout", "unavailable", "unauthorized", "forbidden", "integrity", "quota_exhausted", "unsafe_source", "invalid_provider_output", "unexpected"] },
+        "retryable": { "type": "boolean" },
+        "safe_message": { "$ref": "#/$defs/SafeText" },
+        "provider": { "$ref": "#/$defs/SafeCode" },
+        "operation_id": { "$ref": "#/$defs/OperationId" },
+        "details": { "$ref": "#/$defs/StringMap" },
+        "occurred_at": { "$ref": "#/$defs/UtcInstant" }
+      }
+    },
+    "ProviderHealthDTO": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "provider", "capability", "status", "checked_at", "latency_ms", "safe_reason_code", "expires_at"],
+      "properties": {
+        "schema_version": { "$ref": "#/$defs/SchemaVersion" },
+        "provider": { "$ref": "#/$defs/SafeCode" },
+        "capability": { "$ref": "#/$defs/SafeCode" },
+        "status": { "enum": ["healthy", "degraded", "unhealthy", "not_configured"] },
+        "checked_at": { "$ref": "#/$defs/UtcInstant" },
+        "latency_ms": { "type": "integer", "minimum": 0, "maximum": 30000 },
+        "safe_reason_code": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/SafeCode" }] },
+        "expires_at": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/UtcInstant" }] }
+      }
+    },
+    "ErrorResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "error"],
+      "properties": {
+        "status": { "const": "error" },
+        "error": { "$ref": "#/$defs/PortErrorDTO" }
+      }
+    }
+  }
+}
