@@ -29,76 +29,85 @@
 
 ## Phase 1 — Architecture Guardrails 與核心骨架
 
-- [ ] **T10 — 建立 Clean Architecture package boundary 與 architecture tests**
+- [x] **T10 — 建立 Clean Architecture package boundary 與 architecture tests**
   - **依賴**：T01；OQ-B001～OQ-B011 中與 T01 schema freeze／T10 ownership boundary 直接相關的決策
   - **Phase-specific gate**：不依賴 OQ-B012、OQ-B013、OQ-B014 或 OQ-B015。
   - **需求**：CP-ARCH-01..04、CP-PORT-03
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/application/`、`src/crypto_trust_agent/infrastructure/`、`src/crypto_trust_agent/presentation/`、`tests/architecture/`
   - **驗收條件**：四層可匯入；Domain 無 FastAPI/Boto3/Bedrock/SageMaker/AgentCore/vendor SDK；Application 無 Infrastructure/Presentation/vendor imports；composition root 之外沒有 concrete adapter wiring。
   - **測試種類**：Architecture、import smoke test
+  - **完成證據**：2026-08-01 `python -B -m unittest discover -s tests/architecture -p "test_*.py" -v`，4 tests passed；四層為 explicit packages，AST dependency guard 通過，未建立或接線任何 concrete Provider adapter。
 
-- [ ] **T11 — 建立 boundary schema/version/error primitives**
+- [x] **T11 — 建立 boundary schema/version/error primitives**
   - **依賴**：T10
   - **需求**：CP-PORT-02、CP-PORT-06、CP-ARCH-05..08
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/application/dto/`、`src/crypto_trust_agent/application/ports/`、`tests/unit/`、`tests/contract/`
   - **驗收條件**：UTC timestamp、canonical Decimal string、SemVer schema、distributed `DeadlineDTO`、receiver-local monotonic enforcement、typed error envelope 可驗證；wire 不含 runtime monotonic value；unknown provider exception 安全映射且不洩漏 raw exception/secret。
   - **測試種類**：Unit、schema、property-based、Contract
+  - **完成證據**：2026-08-01 `python -B -m unittest discover -s tests/unit -p "test_*.py" -v`（6 passed）、`python -B -m unittest discover -s tests/contract -p "test_*.py" -v`（7 passed）、architecture regression（4 passed）；涵蓋 frozen `1.0.0`、UTC `Z`、ADR-004 grammar/ranges、六欄 DeadlineDTO、receiver-local monotonic deadline、expired-before-I/O 與 redacted `unexpected_provider_error`。
 
 ## Phase 2 — Domain Entities 與狀態機
 
-- [ ] **T20 — 實作 Task 與 Execution aggregates/state machines**
+- [x] **T20 — 實作 Task 與 Execution aggregates/state machines**
   - **依賴**：T11
   - **需求**：CP-FR001-01..10、CP-FR011-06..12
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`tests/unit/`
   - **驗收條件**：Task 與 Execution 只允許 design 定義的 transition；Pre-flight 前無 Formal Execution；terminal state 不倒退；版本衝突可偵測；admin rerun invariant 可由 domain policy 表達。
   - **測試種類**：Unit、state-transition table、property-based
+  - **完成證據**：2026-08-01 state-machine targeted tests 10 passed；完整 unit regression 16 passed、common contract 7 passed、architecture 4 passed。Task pre-flight/lock/terminal 與 Execution dual pipeline path、terminal outcome、optimistic version、allowlisted admin second attempt 均由 immutable aggregate invariant 強制。
 
-- [ ] **T21 — 實作 Evidence、EvidenceClaimLink、EvidenceAssessment、AnalysisResult**
+- [x] **T21 — 實作 Evidence、EvidenceClaimLink、EvidenceAssessment、AnalysisResult**
   - **依賴**：T11
   - **需求**：CP-FR005-*、CP-FR007-02
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`tests/unit/`
   - **驗收條件**：Evidence 建立後不可變且只用 canonical `raw_locator`；stance 只允許 supports/contradicts/context；assessment 以 sequence append-only 且 latest 可重現；AnalysisResult 有 input refs、quality、producer/ruleset version；跨 Task/quarantined/missing lineage 被拒絕。
   - **測試種類**：Unit、schema、immutability、property-based
+  - **完成證據**：2026-08-01 Evidence targeted tests 7 passed；完整 unit regression 23 passed、common contract 7 passed、architecture 4 passed。Frozen dataclass 與 immutable mappings 保護 Evidence/Analysis；ContentReference half-open offset、HTTPS/dataset URL、hash/lineage、active-only linking、append-only sequence 與 max-sequence latest selection 均通過。
 
 ## Phase 3 — Deterministic Planning、Fingerprint 與 Repository Fakes
 
-- [ ] **T30 — 實作版本化 request fingerprint**
+- [x] **T30 — 實作版本化 request fingerprint**
   - **依賴**：T00、T20
   - **需求**：CP-FR001-04..06、CP-ARCH-06
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/application/`、`tests/unit/`
   - **驗收條件**：完全依核准 ADR canonicalize question/assets/timeframe；相等輸入產生相同 fingerprint；規則版本被持久化；Unicode/whitespace/order/timezone/boundary fixtures 有明確結果；不使用 wall-clock 隱含值。
   - **測試種類**：Unit、golden vectors、property-based
+  - **完成證據**：2026-08-01 fingerprint targeted tests 5 passed；完整 unit regression 28 passed、architecture 4 passed。`fingerprint-1.0.0` 實作 NFKC/Unicode whitespace、allowlisted assets requested/canonical order、RFC3339 minute-aligned UTC、受限 RFC8785-compatible canonical JSON 與 lowercase SHA-256；函式不讀 wall clock。
 
-- [ ] **T31 — 實作 Deterministic Planner 與 source_requirement_matrix**
+- [x] **T31 — 實作 Deterministic Planner 與 source_requirement_matrix**
   - **依賴**：T20、T30
   - **需求**：CP-FR002-*、CP-FR003-01..02、CP-FR003-05
   - **允許修改目錄**：`src/crypto_trust_agent/domain/`、`src/crypto_trust_agent/application/`、`tests/unit/`
   - **驗收條件**：三題型產生固定 dimensions/categories/queries/budgets/ranges/plans；matrix 與主規格一致；官方 dataset 永為 required；相同 input/ruleset/clock snapshot 的 canonical output byte-equivalent；沒有 LLM/provider import/call；保留雙資產 requested order。
   - **測試種類**：Unit、golden snapshot、property-based、Architecture
+  - **完成證據**：2026-08-01 planner targeted tests 4 passed；完整 unit regression 32 passed、architecture 4 passed。三題型 matrix、六類固定 jobs、官方 dataset market job、版本化 budgets/ranges/analysis steps、byte-equivalent canonical plan 與雙資產 first-priority requested order 均通過；無 LLM/provider dependency。
 
-- [ ] **T32 — 實作 Repository/Event/Clock Ports 與可控 fake adapters**
+- [x] **T32 — 實作 Repository/Event/Clock Ports 與可控 fake adapters**
   - **依賴**：T01、T20、T21
   - **Phase-specific gate**：Application Port interfaces 與 in-memory fakes 不依賴 OQ-B012；fake transaction/quota 行為必須標示為 non-production，且不得宣稱 DynamoDB/distributed concurrency production-complete。
   - **需求**：CP-PORT-01..05、CP-ARCH-05
   - **允許修改目錄**：`src/crypto_trust_agent/application/ports/`、`src/crypto_trust_agent/application/dto/`、`src/crypto_trust_agent/infrastructure/fakes/`、`tests/contract/`
   - **驗收條件**：TaskRepository、ExecutionRepository、EvidenceRepository、ArtifactRepository、EventPublisher、Clock 的 fake 實作完整；支援 atomic create-or-get、conditional transition、append-only assessment、artifact hash、recorded events 與 wall/monotonic fake time；`ExecutionRepository.acquire_quota_and_create` 是 revalidate + Task input lock + quota + Execution create + pass consume 的唯一原子 authority，TaskRepository fake 不得暴露獨立 execution lock；全部通過共享契約。
   - **測試種類**：Contract、concurrency、idempotency、fake smoke
+  - **完成證據**：2026-08-01 `python -B -m unittest tests.contract.test_core_repository_fakes -v`（23 passed）；完整 contract regression（30 passed）、unit regression（32 passed）、architecture regression（4 passed），`python -B -m compileall -q src tests` 通過。六個 Application-owned Protocol、frozen DTO 與 non-production thread-safe fakes 覆蓋 26 個 frozen stable methods；40-way create-or-get、100-way atomic acquire、24h replay、tenant/fingerprint/preflight/quota binding、deadline、conditional transition、append-only snapshot assessment、artifact bytes/hash/manifest、recorded event dedup/redaction 與可控 wall/monotonic time均通過；TaskRepository 未暴露 execution lock。
 
 ## Phase 4 — Task API、Identity、Pre-flight 與 Formal Quota
 
-- [ ] **T40 — 實作 CreateTask use case 與 FastAPI boundary**
+- [x] **T40 — 實作 CreateTask use case 與 FastAPI boundary**
   - **依賴**：T30、T31、T32
   - **需求**：CP-FR001-*、CP-ARCH-04
   - **允許修改目錄**：`src/crypto_trust_agent/application/use_cases/`、`src/crypto_trust_agent/presentation/api/`、`src/crypto_trust_agent/infrastructure/identity/`、`tests/unit/`、`tests/integration/core/`
   - **驗收條件**：verified Cognito principal 是唯一 user identity；body/query/custom header 無法 override；每 user 10/hour 且 reuse 也計數；24h create-or-get 併發只得一 Task；合法新建/重用與 401/422/429 mapping 正確；log 僅有 pseudonym/sanitized fields。
   - **測試種類**：Unit、API Integration、security、concurrency、Contract
+  - **完成證據**：2026-08-01 test-first red→green；`python -B -m unittest tests.unit.test_create_task -v`（9 passed）、`python -B -m unittest tests.integration.core.test_task_api -v`（9 passed，包含實際 FastAPI `TestClient` composition）、targeted Task/Execution contract（9 passed）；完整 unit regression（41 passed）、contract regression（30 passed）、architecture regression（4 passed），`python -B -m compileall -q src tests` 通過。verified Cognito-style principal（injectable local verifier，無 AWS/network adapter）為唯一 identity；issuer/audience/signature-bound verifier/expiry/sub/admin-group negative cases、body/query/custom-header override rejection、authenticated request count-first、reuse 計數、10/hour 429、10-way use-case/API concurrency 單一 24h Task、created/reused 201/200、401/422、三題型 plan、HMAC pseudonym redaction、audit failure isolation、64KiB ASGI body bound 與 FastAPI mount 均通過。Runtime/test dependencies 以 `pyproject.toml` 精確釘選。
 
-- [ ] **T41 — 實作 Pre-flight readiness 與獨立限流**
+- [x] **T41 — 實作 Pre-flight readiness 與獨立限流**
   - **依賴**：T32、T40
   - **需求**：CP-FR011-01..05
   - **允許修改目錄**：`src/crypto_trust_agent/application/use_cases/`、`src/crypto_trust_agent/application/ports/`、`src/crypto_trust_agent/presentation/api/`、`src/crypto_trust_agent/infrastructure/fakes/`、`tests/unit/`、`tests/integration/core/`
   - **驗收條件**：檢查 input/dataset/Nova/Opus/SageMaker/allowlist readiness；不執行完整 inference；第 4 次/minute 回 429 且 fake probes 呼叫數不增加；不建立 Execution、不消耗 quota；不健康原因可安全顯示。
   - **測試種類**：Unit、Contract、API Integration、rate-limit、security
+  - **完成證據**：2026-08-01 test-first red→green；`python -B -m unittest tests.unit.test_preflight tests.integration.core.test_preflight_api -v`（13 passed），targeted frozen TaskRepository contract（23 passed）；完整 unit regression（49 passed）、contract regression（30 passed）、architecture regression（4 passed）、API regression（14 passed），`python -B -m compileall -q src tests` 與 `git diff --check` 通過。Pre-flight 在任何 local/provider probe 前原子取得每 Task 3/minute slot，第 4 次回 429 且 probe count 不增加；input/official dataset 使用 Application-owned local readiness Port，Nova/Opus/SageMaker/external allowlist 消費 frozen 3 秒 side-effect-free health shape，無 inference。成功 pass 從 probes 完成時起固定 60 秒，綁定 `task_id`/`task_version`/`input_lock_hash`/`dependency_snapshot_hash` 且保留未消耗 single-use fields；所有失敗、429 與不健康結果均不建立 Execution、不消耗 formal quota，只輸出 allowlisted safe code。ASGI/FastAPI route 僅採 verified principal，body/query/custom identity override、cross-tenant、deadline-before-I/O、unknown exception sanitization 與 event-loop offload 均通過；未修改 frozen schema/DTO contract、Provider directories 或 provider plan。
 
 - [ ] **T42 — 實作 Formal quota、Execution create 與 admin rerun**
   - **依賴**：T20、T32、T41
@@ -110,12 +119,13 @@
 
 ## Phase 5 — Evidence 與 Analysis Pipeline
 
-- [ ] **T50 — 實作 SourceCollector/EvidenceExtractor Ports、DTO 與 scenario fakes**
+- [x] **T50 — 實作 SourceCollector/EvidenceExtractor Ports、DTO 與 scenario fakes**
   - **依賴**：T01、T21、T32
   - **需求**：CP-FR003-*、CP-FR004-*、CP-PORT-01..05
   - **允許修改目錄**：`src/crypto_trust_agent/application/ports/`、`src/crypto_trust_agent/application/dto/`、`src/crypto_trust_agent/infrastructure/fakes/`、`tests/contract/`
   - **驗收條件**：planned job 只接受核准 category/query/budget；outcome 僅 success/skipped/failed；RawRecord 含 locator/hash/time/provenance；Extractor 只回 schema-valid claims 或 typed invalid/quarantine outcome；fake 可模擬 timeout、invalid schema、repair 與 URL rejection。
   - **測試種類**：Contract、schema、timeout、security negative cases
+  - **完成證據**：2026-08-01 test-first red→green；`python -B -m unittest tests.contract.test_source_collector_evidence_extractor_fakes -v`（17 passed）、完整 unit regression（55 passed）、完整 contract regression（47 passed）、architecture regression（4 passed），`python -B -m compileall -q src tests/contract` 與 `git diff --check` 通過。新增 frozen/slots exact-wire DTO、runtime-checkable `SourceCollector`/`EvidenceExtractor`、`non_production` deterministic scenario fakes，以及 `tests/contract/shared_collector_extractor_assertions.py` 共用 assertions；涵蓋六個 frozen stable methods/CT IDs、method-specific errors、recorded replay、deadline-before-I/O、完整 RawRecord lineage/provenance/security、HTTPS/443/SSRF/redirect/payload bounds、timeout/invalid schema/repair/quarantine、health/capabilities 與 unknown exception redaction。未修改 frozen schema、Provider-owned adapter 路徑或 Provider plan；未連線 AWS/network。
 
 - [ ] **T51 — 實作 Evidence normalization、link、assessment 與 isolation**
   - **依賴**：T21、T50
