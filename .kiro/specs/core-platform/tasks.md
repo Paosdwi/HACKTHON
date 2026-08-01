@@ -257,12 +257,13 @@
 
 ## Phase 8 — 最終 E2E 與 Dress Rehearsal
 
-- [ ] **T80 — Fake-adapter 本機完整 E2E**
+- [x] **T80 — Fake-adapter 本機完整 E2E**
   - **依賴**：T60、T61、T62、T63
   - **需求**：CP-PORT-05 與全部 FR 驗收
   - **允許修改目錄**：`tests/e2e/`、`tests/fixtures/`、`src/crypto_trust_agent/infrastructure/fakes/`；若發現產品缺陷，只可回到缺陷所屬 task 的允許目錄並先更新 task 記錄
   - **驗收條件**：三題型成功；source matrix；Task 24h reuse；10/hour；Pre-flight 3/minute；跨 task quota；admin rerun；optional/required partial；Nova quarantine；SageMaker timeout；Opus repair/Sonnet invalid；deadline；雙資產 first-priority；citation audit；完整 artifact bundle。
   - **測試種類**：E2E、fault injection、deterministic replay、security regression
+  - **完成證據**：2026-08-01 於 `feature/core-platform` 完成本機全 fake 驗收；`python -B -m unittest tests.e2e.test_full_fake_platform -v`（15 passed）與完整 E2E regression（24 passed），完整 unit（134 passed）、contract（99 passed）、architecture（4 passed）、Core integration（59 passed），`python -B -m compileall -q src tests` 與 `git diff --check` 均通過。測試由 T63 FastAPI/TestClient HTTP spine 與真實 Core use cases、T60 DAG、T64 publication bridge、scenario-driven local fakes組成，覆蓋三題型與正式 `source_requirement_matrix`、deterministic/idempotent replay、不同問題 hash、24h/tenant/input 隔離、CreateTask 10/hour、Pre-flight 3/minute且第 4 次不 probe、跨 Task quota、verified admin 第二次與第三次 manual case。故障矩陣覆蓋 optional/required source failure與報告限制、無 verified Evidence 阻止 reasoning/publication、900 秒 hard deadline/optional cutoff/stage timeout/no-new-boundary、雙資產 requested order/first priority/有界 concurrency、EvidenceExtractor v2 valid/invalid/一次授權 repair/失敗 quarantine、MarketRegime timeout/unavailable 的 Core canonical-decimal fallback、Reasoning primary/repair/fallback invalid/hallucinated citation fail-closed，以及 Structured Context 保留 counter evidence並拒絕 quarantined/cross-task refs。publication 僅由 Orchestrator 觸發；驗證 normal 七檔 bundle、Manifest 最後寫且 self-excluded、descriptor identity/hash/size、citation/lineage/assessment、redaction、繁中 Demo 頁面/下載/ownership/CSP/no-store/nosniff/escaping。suite 無 `MagicMock`、wall-clock sleep、預寫 bundle、直接 `.publish()`、AWS SDK、外部 network、真實模型或 secret；只新增 fake-only `configure_report_limitations` scenario API，未放寬 production validation，未發現需回修既有 Core task 的產品缺陷。T81 未開始，且仍依賴未完成的 T54、T55、Provider PA70～PA74 與適用的 OQ production gates。
 
 - [ ] **T81 — AWS integration E2E 與 Phase F 900 秒 Dress Rehearsal**
   - **依賴**：Core T80、T54、T55；Provider authority 的 PA70、PA71、PA72、PA73、PA74 均完成（Core T70–T74 僅為 references）；production persistence/live-extension slices 分別取得 OQ-B012/OQ-B013 核准

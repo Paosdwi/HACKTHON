@@ -77,6 +77,7 @@ class FakeFormalRunStepExecutor:
         self._requests: list[FormalRunStepRequest] = []
         self._cancel_after: dict[FormalRunStep, CancellationToken] = {}
         self._populate_pipeline = populate_pipeline
+        self._report_limitations: tuple[str, ...] = ()
 
     @property
     def calls(self) -> tuple[FormalRunStep, ...]:
@@ -120,6 +121,15 @@ class FakeFormalRunStepExecutor:
         )
         with self._lock:
             self._scenarios[FormalRunStep(step)] = scenario
+
+    def configure_report_limitations(
+        self, limitations: str | tuple[str, ...]
+    ) -> None:
+        configured = (limitations,) if isinstance(limitations, str) else tuple(limitations)
+        if not configured or any(not isinstance(item, str) or not item for item in configured):
+            raise ValueError("limitations must contain nonempty strings")
+        with self._lock:
+            self._report_limitations = configured
 
     def cancel_after(self, step: FormalRunStep, token: CancellationToken) -> None:
         with self._lock:
@@ -378,7 +388,10 @@ class FakeFormalRunStepExecutor:
                 facts=(fact,),
                 inferences=(inference,),
                 conclusions=(conclusion,),
-                limitations=("分析僅使用可重現的本機 fake 資料。",),
+                limitations=(
+                    "分析僅使用可重現的本機 fake 資料。",
+                    *self._report_limitations,
+                ),
                 watchpoints=(f"持續觀察 {assets[0]} 的市場情勢變化。",),
                 confidence_components=ConfidenceComponentsDTO(
                     "0.8", "0.75", "0.7", "0.75"
