@@ -12,12 +12,14 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from crypto_trust_agent.application.dto.evidence_extractor_v2 import (  # noqa: E402
+from crypto_trust_agent.application.dto.evidence_extractor_v2 import (
     REPAIR_AUTHORIZATION_RULESET_VERSION,
     RepairAuthorizationInputDTO,
+    RepairRequestV2DTO,
     build_repair_authorization_hash,
     repair_authorization_payload,
 )
+from crypto_trust_agent.domain.primitives import ContractValidationError
 
 FIXTURE_PATH = (
     PROJECT_ROOT
@@ -48,6 +50,7 @@ class RepairAuthorizationHashTests(unittest.TestCase):
 
         self.assertEqual(observed["baseline"], observed["reordered_duplicates"])
         for changed in (
+            "different_context_hash",
             "different_clean_content_hash",
             "different_assets",
             "different_taxonomy",
@@ -64,6 +67,7 @@ class RepairAuthorizationHashTests(unittest.TestCase):
                 "authorization_ruleset_version",
                 "raw_record_id",
                 "raw_content_hash",
+                "context_hash",
                 "clean_content_hash",
                 "assets",
                 "allowed_event_taxonomy",
@@ -94,18 +98,49 @@ class RepairAuthorizationHashTests(unittest.TestCase):
     def test_builder_has_no_sensitive_or_nondeterministic_inputs(self) -> None:
         parameters = set(inspect.signature(build_repair_authorization_hash).parameters)
         self.assertEqual({"value"}, parameters)
+        request_hash_parameters = set(
+            inspect.signature(RepairRequestV2DTO.expected_authorization_hash).parameters
+        )
+        self.assertEqual({"self"}, request_hash_parameters)
         dto_parameters = set(inspect.signature(RepairAuthorizationInputDTO).parameters)
+        payload = repair_authorization_payload(
+            RepairAuthorizationInputDTO(**self.fixture["vectors"][0]["input"])
+        )
         for forbidden in (
             "content",
             "locator",
             "credential",
             "provider_payload",
             "provider_diagnostics",
+            "original_result",
+            "validator_errors",
+            "deadline",
             "clock",
             "environment",
             "random",
         ):
             self.assertNotIn(forbidden, dto_parameters)
+            self.assertNotIn(forbidden, payload)
+
+    def test_authorization_collections_accept_only_list_or_tuple(self) -> None:
+        baseline = dict(self.fixture["vectors"][0]["input"])
+        invalid_containers = (
+            "BTC",
+            b"BTC",
+            {"BTC": True},
+            {"BTC"},
+            (item for item in ("BTC",)),
+            iter(("BTC",)),
+        )
+        for field in ("assets", "allowed_event_taxonomy"):
+            for container in invalid_containers:
+                with self.subTest(field=field, container=type(container).__name__):
+                    invalid = baseline | {field: container}
+                    with self.assertRaisesRegex(
+                        ContractValidationError,
+                        f"invalid {field}",
+                    ):
+                        RepairAuthorizationInputDTO(**invalid)
 
     def test_authorization_input_is_frozen(self) -> None:
         value = RepairAuthorizationInputDTO(**self.fixture["vectors"][0]["input"])

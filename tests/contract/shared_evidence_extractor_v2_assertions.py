@@ -21,11 +21,11 @@ if str(SRC_ROOT) not in sys.path:
 
 from crypto_trust_agent.application.dto.common import DeadlineDTO, ErrorResultDTO
 from crypto_trust_agent.application.dto.evidence_extractor import (
-    ExtractRequestDTO,
     ExtractedClaimDTO,
     ExtractionProviderDTO,
     ExtractionResultDTO,
     ExtractorHealthCheckRequestDTO,
+    ExtractRequestDTO,
     InlineContentInputDTO,
     LocatorContentInputDTO,
     RepairRequestDTO,
@@ -34,6 +34,7 @@ from crypto_trust_agent.application.dto.evidence_extractor import (
 )
 from crypto_trust_agent.application.dto.evidence_extractor_v2 import (
     REPAIR_AUTHORIZATION_RULESET_VERSION,
+    REPAIR_CONTENT_MAX_UTF8_BYTES,
     RepairAuthorizationInputDTO,
     RepairRequestV2DTO,
     build_repair_authorization_hash,
@@ -120,6 +121,7 @@ def authorization_hash(
     *,
     assets: tuple[str, ...] = ("BTC",),
     taxonomy: tuple[str, ...] = ("regulatory",),
+    context_hash: str = HASH_B,
     clean_content_hash: str | None = None,
 ) -> str:
     return build_repair_authorization_hash(
@@ -127,6 +129,7 @@ def authorization_hash(
             authorization_ruleset_version=REPAIR_AUTHORIZATION_RULESET_VERSION,
             raw_record_id="RAW-001",
             raw_content_hash=HASH_A,
+            context_hash=context_hash,
             clean_content_hash=clean_content_hash or sha256_text(CONTENT),
             assets=assets,
             allowed_event_taxonomy=taxonomy,
@@ -143,6 +146,7 @@ def repair_request(
     clean_content_hash: str | None = None,
     assets: tuple[str, ...] = ("BTC",),
     taxonomy: tuple[str, ...] = ("regulatory",),
+    context_hash: str = HASH_B,
     original_result: ExtractionResultDTO | None = None,
     request_deadline: DeadlineDTO | None = None,
 ) -> RepairRequestV2DTO:
@@ -155,7 +159,7 @@ def repair_request(
         execution_id="EXEC-001",
         raw_record_id="RAW-001",
         raw_content_hash=HASH_A,
-        context_hash=HASH_B,
+        context_hash=context_hash,
         original_result=original,
         validator_errors=original.validation_errors,
         content=content_value,
@@ -165,6 +169,7 @@ def repair_request(
         repair_authorization_hash=authorization_hash(
             assets=assets,
             taxonomy=taxonomy,
+            context_hash=context_hash,
             clean_content_hash=content_hash,
         ),
         output_schema_version="1.0.0",
@@ -297,6 +302,7 @@ class EvidenceExtractorV2ContractAssertions:
                     authorization_ruleset_version=REPAIR_AUTHORIZATION_RULESET_VERSION,
                     raw_record_id=request["raw_record_id"],
                     raw_content_hash=request["raw_content_hash"],
+                    context_hash=request["context_hash"],
                     clean_content_hash=request["clean_content_hash"],
                     assets=tuple(request["assets"]),
                     allowed_event_taxonomy=tuple(request["allowed_event_taxonomy"]),
@@ -364,6 +370,7 @@ class EvidenceExtractorV2ContractAssertions:
             repair["idempotency"]["key_fields"],
         )
         for code in (
+            "input_too_large",
             "repair_content_unavailable",
             "repair_content_hash_mismatch",
             "repair_asset_scope_violation",
@@ -405,6 +412,30 @@ class EvidenceExtractorV2ContractAssertions:
             request.assets.append("ETH")
         with self.assertRaises(ContractValidationError):
             replace(request, schema_version="1.0.0")
+
+    def test_v2_python_collections_are_closed_before_tuple_conversion(self) -> None:
+        request = repair_request()
+        factories = (
+            lambda item: "single",
+            lambda item: b"single",
+            lambda item: {"value": item},
+            lambda item: {item},
+            lambda item: (value for value in (item,)),
+            lambda item: iter((item,)),
+        )
+        cases = (
+            ("assets", "BTC"),
+            ("allowed_event_taxonomy", "regulatory"),
+            ("validator_errors", request.validator_errors[0]),
+        )
+        for field, item in cases:
+            for factory in factories:
+                container = factory(item)
+                with (
+                    self.subTest(field=field, container=type(container).__name__),
+                    self.assertRaises(ContractValidationError),
+                ):
+                    replace(request, **{field: container})
 
     def test_v2_version_negotiation_and_unknown_major_fail_closed(self) -> None:
         self.assertEqual(
@@ -469,6 +500,61 @@ class EvidenceExtractorV2ContractAssertions:
         self.assertEqual("valid", located.outcome)
         self.assertEqual(1, self.locator_resolution_count(locator_adapter))
         self.assertEqual(1, self.provider_invocation_count(locator_adapter))
+
+    def test_v2_repair_content_utf8_byte_boundaries_before_provider(self) -> None:
+        exact_ascii = "a" * REPAIR_CONTENT_MAX_UTF8_BYTES
+        accepted = self.make_extractor()
+        accepted_request = repair_request(
+            "OP-REP-V2-SIZE-ASCII",
+            content=InlineContentInputDTO(exact_ascii),
+            clean_content_hash=sha256_text(exact_ascii),
+        )
+        self.assertIsInstance(accepted.repair(accepted_request), ExtractionResultDTO)
+        self.assertEqual(1, self.provider_invocation_count(accepted))
+
+        exact_multibyte = "é" * (REPAIR_CONTENT_MAX_UTF8_BYTES // 2)
+        self.assertEqual(REPAIR_CONTENT_MAX_UTF8_BYTES, len(exact_multibyte.encode("utf-8")))
+        multibyte = self.make_extractor()
+        multibyte_request = repair_request(
+            "OP-REP-V2-SIZE-MULTIBYTE",
+            content=InlineContentInputDTO(exact_multibyte),
+            clean_content_hash=sha256_text(exact_multibyte),
+        )
+        self.assertIsInstance(multibyte.repair(multibyte_request), ExtractionResultDTO)
+        self.assertEqual(1, self.provider_invocation_count(multibyte))
+
+        over = "a" * (REPAIR_CONTENT_MAX_UTF8_BYTES - 1) + "é"
+        self.assertEqual(REPAIR_CONTENT_MAX_UTF8_BYTES + 1, len(over.encode("utf-8")))
+        # Frozen v1 InlineContentInputDTO already rejects this byte size. Build
+        # the actual boundary type without its constructor to prove the v2 fake
+        # remains defensive for decoded wire objects and never invokes provider.
+        unchecked_inline = object.__new__(InlineContentInputDTO)
+        object.__setattr__(unchecked_inline, "clean_content", over)
+        object.__setattr__(unchecked_inline, "kind", "inline")
+        oversized = self.make_extractor()
+        oversized_request = repair_request(
+            "OP-REP-V2-SIZE-OVER",
+            content=unchecked_inline,
+            clean_content_hash=sha256_text(over),
+        )
+        result = oversized.repair(oversized_request)
+        self.assertEqual("input_too_large", result.error.code)
+        self.assertEqual("validation", result.error.category.value)
+        self.assertFalse(result.error.retryable)
+        self.assertEqual(0, self.provider_invocation_count(oversized))
+
+        located = self.make_extractor()
+        locator = "urn:cryptotrust:clean:oversized"
+        self.configure_locator(located, locator, clean_content=over)
+        located_request = repair_request(
+            "OP-REP-V2-SIZE-LOCATOR",
+            content=LocatorContentInputDTO(locator),
+            clean_content_hash=sha256_text(over),
+        )
+        located_result = located.repair(located_request)
+        self.assertEqual("input_too_large", located_result.error.code)
+        self.assertEqual(1, self.locator_resolution_count(located))
+        self.assertEqual(0, self.provider_invocation_count(located))
 
     def test_v2_content_unavailable_and_hash_mismatch_before_provider(self) -> None:
         locator = "urn:cryptotrust:clean:missing"
@@ -572,21 +658,147 @@ class EvidenceExtractorV2ContractAssertions:
         self.assertEqual(1, self.locator_resolution_count(elapsed))
         self.assertEqual(0, self.provider_invocation_count(elapsed))
 
-    def test_v2_replay_payload_conflict_single_repair_and_late_result_isolation(self) -> None:
+    def test_v2_replay_identity_fixed_ruleset_and_conflicts(self) -> None:
+        def hash_for(
+            candidate: RepairRequestV2DTO,
+            ruleset: str = REPAIR_AUTHORIZATION_RULESET_VERSION,
+        ) -> str:
+            return build_repair_authorization_hash(
+                RepairAuthorizationInputDTO(
+                    authorization_ruleset_version=ruleset,
+                    raw_record_id=candidate.raw_record_id,
+                    raw_content_hash=candidate.raw_content_hash,
+                    context_hash=candidate.context_hash,
+                    clean_content_hash=candidate.clean_content_hash,
+                    assets=candidate.assets,
+                    allowed_event_taxonomy=candidate.allowed_event_taxonomy,
+                    output_schema_version=candidate.output_schema_version,
+                    guardrail_policy_version=candidate.guardrail_policy_version,
+                )
+            )
+
+        def reauthorize(candidate: RepairRequestV2DTO) -> RepairRequestV2DTO:
+            return replace(candidate, repair_authorization_hash=hash_for(candidate))
+
         adapter = self.make_extractor()
         request = repair_request("OP-REP-V2-REPLAY")
         first = adapter.repair(request)
         self.assertIs(first, adapter.repair(request))
         self.assertEqual(1, self.provider_invocation_count(adapter))
 
-        changed = repair_request(
-            "OP-REP-V2-REPLAY",
-            assets=("ETH",),
+        replay_deadline = deadline(
+            request.operation_id,
+            budget_ms=1_000,
+            at=NOW,
         )
-        conflict = adapter.repair(changed)
-        self.assertEqual("invalid_extraction_schema", conflict.error.code)
-        self.assertEqual("conflict", conflict.error.category.value)
-        self.assertEqual("payload_conflict", conflict.error.details["reason_code"])
+        changed_envelope = replace(
+            request,
+            deadline=replay_deadline,
+            content=InlineContentInputDTO("different non-authority envelope"),
+            original_result=invalid_original_result(claims=(
+                ExtractedClaimDTO(
+                    "XCL-CHANGED",
+                    "Changed untrusted result.",
+                    "changed",
+                    ("ETH",),
+                    "unknown_event",
+                    "neutral",
+                    "low",
+                ),
+            )),
+            validator_errors=(
+                ValidationErrorDTO("/changed", "changed_error", "Changed."),
+            ),
+        )
+        self.assertIs(first, adapter.repair(changed_envelope))
+        self.assertEqual(1, self.provider_invocation_count(adapter))
+
+        alternate_ruleset_request = replace(
+            request,
+            repair_authorization_hash=hash_for(
+                request,
+                ruleset="repair-authorization-2.0.1",
+            ),
+        )
+        alternate_ruleset_result = adapter.repair(alternate_ruleset_request)
+        self.assertEqual(
+            "invalid_extraction_schema",
+            alternate_ruleset_result.error.code,
+        )
+        self.assertNotEqual(
+            "conflict",
+            alternate_ruleset_result.error.category.value,
+        )
+        self.assertNotEqual(
+            "payload_conflict",
+            alternate_ruleset_result.error.details.get("reason_code"),
+        )
+        self.assertEqual(0, self.locator_resolution_count(adapter))
+        self.assertEqual(1, self.provider_invocation_count(adapter))
+
+        locator_adapter = self.make_extractor()
+        locator_request = repair_request(
+            "OP-REP-V2-ALT-RULESET-LOCATOR",
+            content=LocatorContentInputDTO("urn:cryptotrust:clean:alternate-ruleset"),
+        )
+        alternate_locator_request = replace(
+            locator_request,
+            repair_authorization_hash=hash_for(
+                locator_request,
+                ruleset="repair-authorization-2.0.1",
+            ),
+        )
+        alternate_locator_result = locator_adapter.repair(alternate_locator_request)
+        self.assertEqual(
+            "invalid_extraction_schema",
+            alternate_locator_result.error.code,
+        )
+        self.assertNotEqual(
+            "conflict",
+            alternate_locator_result.error.category.value,
+        )
+        self.assertNotEqual(
+            "payload_conflict",
+            alternate_locator_result.error.details.get("reason_code"),
+        )
+        self.assertEqual(0, self.locator_resolution_count(locator_adapter))
+        self.assertEqual(0, self.provider_invocation_count(locator_adapter))
+
+        raw_record_changed = replace(
+            request,
+            raw_record_id="RAW-002",
+            original_result=replace(request.original_result, raw_record_id="RAW-002"),
+        )
+        conflict_requests = (
+            reauthorize(raw_record_changed),
+            reauthorize(replace(request, raw_content_hash=HASH_B)),
+            repair_request(request.operation_id, context_hash="sha256:" + "c" * 64),
+            repair_request(request.operation_id, clean_content_hash=HASH_A),
+            repair_request(request.operation_id, assets=("ETH",)),
+            repair_request(request.operation_id, taxonomy=("market_event",)),
+            reauthorize(
+                replace(
+                    request,
+                    guardrail_policy_version="extraction-guardrail-1.0.1",
+                )
+            ),
+        )
+        for changed in conflict_requests:
+            with self.subTest(hash=changed.repair_authorization_hash):
+                conflict = adapter.repair(changed)
+                self.assertEqual("invalid_extraction_schema", conflict.error.code)
+                self.assertEqual("conflict", conflict.error.category.value)
+                self.assertEqual("payload_conflict", conflict.error.details["reason_code"])
+        self.assertEqual(1, self.provider_invocation_count(adapter))
+
+        forged = replace(
+            repair_request(request.operation_id, assets=("ETH",)),
+            repair_authorization_hash=request.repair_authorization_hash,
+        )
+        forged_result = adapter.repair(forged)
+        self.assertEqual("invalid_extraction_schema", forged_result.error.code)
+        self.assertNotEqual("conflict", forged_result.error.category.value)
+        self.assertEqual(1, self.provider_invocation_count(adapter))
 
         second_operation = replace(
             request,
@@ -594,9 +806,8 @@ class EvidenceExtractorV2ContractAssertions:
             deadline=deadline("OP-REP-V2-SECOND"),
         )
         second = adapter.repair(second_operation)
-        self.assertEqual("invalid_extraction_schema", second.error.code)
-        self.assertEqual("conflict", second.error.category.value)
-        self.assertEqual(1, self.provider_invocation_count(adapter))
+        self.assertIsInstance(second, ExtractionResultDTO)
+        self.assertEqual(2, self.provider_invocation_count(adapter))
 
         late = self.make_extractor()
         operation = "OP-REP-V2-LATE"
@@ -609,7 +820,11 @@ class EvidenceExtractorV2ContractAssertions:
         timed_out = late.repair(repair_request(operation))
         self.assertEqual("deadline_exceeded", timed_out.error.code)
         self.configure_repair(late, operation, valid_result())
-        replay = late.repair(repair_request(operation))
+        expired_replay = repair_request(
+            operation,
+            request_deadline=deadline(operation, budget_ms=1_000, at=NOW),
+        )
+        replay = late.repair(expired_replay)
         self.assertIs(timed_out, replay)
         self.assertEqual(1, self.provider_invocation_count(late))
 

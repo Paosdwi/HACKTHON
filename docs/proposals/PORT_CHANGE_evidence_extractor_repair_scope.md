@@ -92,7 +92,7 @@ These are required v2 authority fields. An absent or invalid field cannot be tre
 - `inline` contains the exact bounded cleaned content authorized by Core;
 - `locator` contains a Core-authorized opaque locator that is immutable for that operation.
 
-For locator input, the resolved bytes must be verified against `clean_content_hash` before provider invocation.
+For locator input, the resolved bytes must be verified against `clean_content_hash` before provider invocation. For both inline and locator-resolved content, the repair runtime must encode the exact text as UTF-8 and reject content larger than **1,048,576 bytes** with non-retryable `input_too_large` before provider invocation. JSON Schema `maxLength` counts Unicode code points, not bytes, so it is only a structural bound; the UTF-8 byte maximum is a required runtime semantic invariant.
 
 Content authority must not be inferred from:
 
@@ -109,14 +109,15 @@ The approved hash roles are distinct:
 
 - `raw_content_hash` remains the raw-record lineage identity.
 - `clean_content_hash` is the SHA-256 of the exact authoritative cleaned-content UTF-8 bytes.
-- `context_hash` retains its existing meaning and must not be silently redefined in v2.
+- `context_hash` retains its existing meaning and is included unchanged in the repair authorization preimage.
 - `repair_authorization_hash` is added as the Core-owned repair authorization identity.
 
-`repair_authorization_hash` is computed from versioned canonical JSON containing at least:
+`repair_authorization_hash` uses the single contract-fixed `REPAIR_AUTHORIZATION_RULESET_VERSION = repair-authorization-2.0.0` and is computed from versioned canonical JSON containing exactly:
 
 - `authorization_ruleset_version`;
 - `raw_record_id`;
 - `raw_content_hash`;
+- `context_hash`;
 - `clean_content_hash`;
 - canonical sorted `assets`;
 - canonical sorted `allowed_event_taxonomy`;
@@ -125,11 +126,12 @@ The approved hash roles are distinct:
 
 Canonicalization rules:
 
-1. Deduplicate `assets` and `allowed_event_taxonomy`.
-2. Sort each list by Unicode code point.
-3. Serialize as canonical JSON encoded as UTF-8.
-4. Hash with SHA-256.
-5. Encode using the existing canonical hash wire: `sha256:` followed by 64 lowercase hexadecimal characters.
+1. Python DTO collection inputs accept only `list` or `tuple` and validate that closed container before any tuple conversion; strings, bytes, dictionaries, sets, generators, and arbitrary iterables are rejected. Authorization inputs may contain duplicates for deterministic canonicalization, while `RepairRequestV2DTO` rejects duplicate assets or taxonomy values in parity with wire `uniqueItems`.
+2. Deduplicate `assets` and `allowed_event_taxonomy`.
+3. Sort each list by Unicode code point.
+4. Serialize as canonical JSON encoded as UTF-8.
+5. Hash with SHA-256.
+6. Encode using the existing canonical hash wire: `sha256:` followed by 64 lowercase hexadecimal characters.
 
 The authorization hash preimage must not include:
 
@@ -138,10 +140,16 @@ The authorization hash preimage must not include:
 - temporary credentials;
 - provider payload or diagnostics.
 
-Replay semantics:
+Replay and version semantics:
 
-- same `operation_id` plus the same canonical authorization payload may replay the recorded result;
-- same `operation_id` plus a different authority payload must fail as a payload conflict;
+- `RepairRequestV2DTO.schema_version` is fixed to `2.0.0`, `output_schema_version` is fixed to `1.0.0`, and repair authorization uses only `repair-authorization-2.0.0`; none is a per-request switch within this v2 contract, and `authorization_ruleset_version` is not a `RepairRequestV2DTO` field;
+- unsupported `schema_version` is rejected by schema/DTO validation or version negotiation;
+- replay identity is the pair `operation_id + repair_authorization_hash`, so the same valid authority hash under a different operation is a distinct fresh identity;
+- the supplied authorization hash is recomputed with the contract-fixed ruleset and validated before any replay lookup; a well-formed hash computed with a different or unsupported ruleset fails closed as non-conflict `invalid_extraction_schema` before locator resolution or provider invocation;
+- a completed replay with the same operation/hash returns the original terminal object and ignores changes to non-hash envelope fields, including changed or already-expired deadline envelopes, original result, validator errors, provider diagnostics, and content representation;
+- `payload_conflict` applies only when the same `operation_id` presents a different valid fixed-ruleset hash caused by changes to v2-expressible authority fields: `raw_record_id`, `raw_content_hash`, `context_hash`, `clean_content_hash`, `assets`, `allowed_event_taxonomy`, or `guardrail_policy_version`;
+- ruleset and fixed schema versions are not conflict-producing request authority fields;
+- only a fresh validated identity creates a receiver-local deadline; an expired fresh request performs no locator or provider I/O;
 - an adapter or Provider must not create, replace, or reinterpret `repair_authorization_hash`.
 
 ### 5. Typed repair errors
@@ -150,6 +158,7 @@ The v2 `RepairErrorResult` adds these exact method-specific error codes:
 
 | Error code | Required trigger and behavior |
 |---|---|
+| `input_too_large` | Inline or locator-resolved cleaned content exceeds 1,048,576 UTF-8 bytes. Return a non-retryable validation error before provider invocation. |
 | `repair_content_unavailable` | Authoritative content or locator cannot be resolved safely within the effective deadline. Fail before provider invocation. |
 | `repair_content_hash_mismatch` | Inline or locator-resolved bytes do not match `clean_content_hash`. Fail before provider invocation. |
 | `repair_asset_scope_violation` | Repaired output contains an asset outside Core-approved `assets`. Reject the provider output. |
@@ -372,8 +381,10 @@ The later Core v2 implementation and shared suite must satisfy all approved test
 - Hidden retry count is zero.
 - Expired deadline prevents locator and provider I/O.
 - Late locator/provider results cannot re-enter a quarantined pipeline.
-- Same operation and same canonical authorization payload replay consistently.
-- Same operation with changed content hash, assets, taxonomy, ruleset, schema, or policy fails as payload conflict.
+- Same operation and same canonical fixed-ruleset authorization payload replay consistently.
+- Under the same operation, changes to `raw_record_id`, `raw_content_hash`, `context_hash`, `clean_content_hash`, `assets`, `allowed_event_taxonomy`, or `guardrail_policy_version`, accompanied by the valid fixed-ruleset hash, fail as `payload_conflict` before I/O.
+- A supplied hash computed with a different or unsupported authorization ruleset fails before replay lookup and locator/provider I/O as non-conflict `invalid_extraction_schema`; unsupported `schema_version` fails DTO/schema validation or version negotiation.
+- Fixed ruleset/schema versions are not switchable `RepairRequestV2DTO` fields and do not produce `payload_conflict`.
 - Typed repair errors do not let invalid repaired claims enter Evidence, Reasoning Context, or publication.
 
 ### Version compatibility
@@ -438,8 +449,8 @@ The former open decisions are resolved as follows:
 
 1. Required field names are `content`, `clean_content_hash`, `assets`, `allowed_event_taxonomy`, and `repair_authorization_hash`.
 2. Content uses the existing closed inline/locator union; inline is exact bounded cleaned content and locator is Core-authorized, opaque, and operation-immutable.
-3. `context_hash` is not redefined; `repair_authorization_hash` carries the new authority identity.
-4. Typed error names are fixed to the four codes listed in this proposal.
+3. `context_hash` is not redefined and is included in the `repair-authorization-2.0.0` preimage; `repair_authorization_hash` carries the authority identity.
+4. Repair adds the four repair-specific codes listed above plus the existing port-level non-retryable validation code `input_too_large` for the 1,048,576 UTF-8 byte runtime bound.
 5. Authorization hashing uses versioned UTF-8 canonical JSON with deduplicated Unicode-code-point-sorted assets/taxonomy and canonical lowercase SHA-256 wire encoding.
 6. V1 remains quarantine-only during the hackathon compatibility window; unknown majors fail closed; no failed v2 request downgrades to successful v1 repair.
 7. V1 retains `CT-EXTRACT-REPAIR-01`; v2 successful repair uses `CT-EXTRACT-REPAIR-02`.

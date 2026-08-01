@@ -20,10 +20,12 @@ from crypto_trust_agent.domain.primitives import ContractValidationError
 
 SCHEMA_VERSION_V2 = "2.0.0"
 OUTPUT_SCHEMA_VERSION = "1.0.0"
-REPAIR_AUTHORIZATION_RULESET_VERSION = "repair-authorization-1.0.0"
+REPAIR_AUTHORIZATION_RULESET_VERSION = "repair-authorization-2.0.0"
+REPAIR_CONTENT_MAX_UTF8_BYTES = 1_048_576
 
 REPAIR_V2_ERROR_CODES = (
     "guardrail_rejected",
+    "input_too_large",
     "invalid_extraction_schema",
     "repair_content_unavailable",
     "repair_content_hash_mismatch",
@@ -70,8 +72,14 @@ def _wire(value: Any) -> Any:
     return value
 
 
+def _closed_collection(values: object, name: str) -> tuple[Any, ...]:
+    _require(isinstance(values, (list, tuple)), f"invalid {name}")
+    assert isinstance(values, (list, tuple))
+    return tuple(values)
+
+
 def _authority_assets(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    frozen = tuple(values)
+    frozen = _closed_collection(values, "assets")
     _require(1 <= len(frozen) <= 100, "invalid assets")
     _require(all(isinstance(item, str) and _ASSET.fullmatch(item) for item in frozen), "invalid asset")
     return frozen
@@ -84,7 +92,7 @@ def _request_assets(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
 
 
 def _authority_taxonomy(values: tuple[str, ...] | list[str]) -> tuple[str, ...]:
-    frozen = tuple(values)
+    frozen = _closed_collection(values, "allowed_event_taxonomy")
     _require(1 <= len(frozen) <= 100, "invalid allowed_event_taxonomy")
     _require(all(isinstance(item, str) and _SAFE.fullmatch(item) for item in frozen), "invalid taxonomy value")
     return frozen
@@ -103,6 +111,7 @@ class RepairAuthorizationInputDTO:
     authorization_ruleset_version: str
     raw_record_id: str
     raw_content_hash: str
+    context_hash: str
     clean_content_hash: str
     assets: tuple[str, ...]
     allowed_event_taxonomy: tuple[str, ...]
@@ -117,6 +126,7 @@ class RepairAuthorizationInputDTO:
         )
         _identifier(self.raw_record_id, _RAW, "raw_record_id", prefix=True)
         _identifier(self.raw_content_hash, _HASH, "raw_content_hash")
+        _identifier(self.context_hash, _HASH, "context_hash")
         _identifier(self.clean_content_hash, _HASH, "clean_content_hash")
         object.__setattr__(self, "assets", _authority_assets(self.assets))
         object.__setattr__(
@@ -141,6 +151,7 @@ def repair_authorization_payload(value: RepairAuthorizationInputDTO) -> dict[str
         "assets": sorted(set(value.assets)),
         "authorization_ruleset_version": value.authorization_ruleset_version,
         "clean_content_hash": value.clean_content_hash,
+        "context_hash": value.context_hash,
         "guardrail_policy_version": value.guardrail_policy_version,
         "output_schema_version": value.output_schema_version,
         "raw_content_hash": value.raw_content_hash,
@@ -194,7 +205,7 @@ class RepairRequestV2DTO:
             and self.original_result.raw_record_id == self.raw_record_id,
             "invalid original_result",
         )
-        errors = tuple(self.validator_errors)
+        errors = _closed_collection(self.validator_errors, "validator_errors")
         _require(
             1 <= len(errors) <= 100
             and all(isinstance(item, ValidationErrorDTO) for item in errors),
@@ -232,16 +243,15 @@ class RepairRequestV2DTO:
     def to_wire(self) -> dict[str, object]:
         return {field.name: _wire(getattr(self, field.name)) for field in fields(self)}
 
-    def expected_authorization_hash(
-        self,
-        *,
-        authorization_ruleset_version: str = REPAIR_AUTHORIZATION_RULESET_VERSION,
-    ) -> str:
+    def expected_authorization_hash(self) -> str:
+        """Recompute the hash for the one ruleset fixed by contract 2.0.0."""
+
         return build_repair_authorization_hash(
             RepairAuthorizationInputDTO(
-                authorization_ruleset_version=authorization_ruleset_version,
+                authorization_ruleset_version=REPAIR_AUTHORIZATION_RULESET_VERSION,
                 raw_record_id=self.raw_record_id,
                 raw_content_hash=self.raw_content_hash,
+                context_hash=self.context_hash,
                 clean_content_hash=self.clean_content_hash,
                 assets=self.assets,
                 allowed_event_taxonomy=self.allowed_event_taxonomy,
@@ -254,6 +264,7 @@ class RepairRequestV2DTO:
 __all__ = (
     "OUTPUT_SCHEMA_VERSION",
     "REPAIR_AUTHORIZATION_RULESET_VERSION",
+    "REPAIR_CONTENT_MAX_UTF8_BYTES",
     "REPAIR_V2_ERROR_CODES",
     "SCHEMA_VERSION_V2",
     "RepairAuthorizationInputDTO",

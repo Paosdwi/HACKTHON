@@ -15,22 +15,25 @@ from crypto_trust_agent.application.dto.common import (
     build_local_deadline,
 )
 from crypto_trust_agent.application.dto.evidence_extractor import (
-    ExtractRequestDTO,
     ExtractedClaimDTO,
     ExtractionProviderDTO,
     ExtractionResultDTO,
     ExtractorHealthCheckRequestDTO,
+    ExtractRequestDTO,
     InlineContentInputDTO,
     LocatorContentInputDTO,
     UsageDTO,
 )
 from crypto_trust_agent.application.dto.evidence_extractor_v2 import (
+    REPAIR_CONTENT_MAX_UTF8_BYTES,
     REPAIR_V2_ERROR_CODES,
     RepairRequestV2DTO,
 )
 from crypto_trust_agent.application.ports.preflight import ProviderHealthDTO
 from crypto_trust_agent.infrastructure.fakes.clock import FakeClock
-from crypto_trust_agent.infrastructure.fakes.evidence_extractor import FakeEvidenceExtractor
+from crypto_trust_agent.infrastructure.fakes.evidence_extractor import (
+    FakeEvidenceExtractor,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +57,7 @@ class LateRepairResult:
 
     def __post_init__(self) -> None:
         if not isinstance(self.result, ExtractionResultDTO):
-            raise ValueError("late repair result is required")
+            raise ValueError("late repair result is required")  # noqa: TRY004
         if type(self.elapsed_ms) is not int or self.elapsed_ms < 0:
             raise ValueError("late repair elapsed_ms must be nonnegative")
 
@@ -82,10 +85,10 @@ class FakeEvidenceExtractorV2:
         self._repair_scenarios: dict[str, object] = {}
         self._locator_scenarios: dict[str, object] = {}
         self._completed_repairs: dict[
-            str,
-            tuple[RepairRequestV2DTO, ExtractionResultDTO | ErrorResultDTO],
+            tuple[str, str],
+            ExtractionResultDTO | ErrorResultDTO,
         ] = {}
-        self._repair_attempts: dict[str, str] = {}
+        self._operation_authorizations: dict[str, str] = {}
         self._lock = RLock()
         self.provider_invocation_count = 0
         self.locator_resolution_count = 0
@@ -159,7 +162,11 @@ class FakeEvidenceExtractorV2:
             details={"reason_code": "payload_conflict"},
         )
 
-    def _local_deadline(self, request: object, timeout_ms: int) -> LocalDeadline | ErrorResultDTO:
+    def _local_deadline(
+        self,
+        request: RepairRequestV2DTO,
+        timeout_ms: int,
+    ) -> LocalDeadline | ErrorResultDTO:
         try:
             return build_local_deadline(
                 request.deadline,
@@ -202,7 +209,7 @@ class FakeEvidenceExtractorV2:
             if expired is not None:
                 return expired
             return configured.clean_content
-        except BaseException:
+        except BaseException:  # noqa: BLE001
             return self._error(request.operation_id, "repair_content_unavailable")
 
     def _default_result(
@@ -265,7 +272,7 @@ class FakeEvidenceExtractorV2:
             if configured is None:
                 return default
             return self._error(request.operation_id, "invalid_extraction_schema")
-        except BaseException:
+        except BaseException:  # noqa: BLE001
             return self._error(request.operation_id, "unexpected_provider_error")
 
     def _validate_result(
@@ -301,50 +308,55 @@ class FakeEvidenceExtractorV2:
                 operation_id = getattr(request, "operation_id", "OP-INVALID-V2")
                 return self._error(operation_id, "invalid_extraction_schema")
 
-            completed = self._completed_repairs.get(request.operation_id)
+            # A supplied digest is never trusted as a replay lookup key until it
+            # has been recomputed from the request's Core-owned authority fields.
+            if request.repair_authorization_hash != request.expected_authorization_hash():
+                return self._error(request.operation_id, "invalid_extraction_schema")
+
+            identity = (request.operation_id, request.repair_authorization_hash)
+            completed = self._completed_repairs.get(identity)
             if completed is not None:
-                if completed[0] == request:
-                    return completed[1]
+                return completed
+
+            prior_hash = self._operation_authorizations.get(request.operation_id)
+            if prior_hash is not None and prior_hash != request.repair_authorization_hash:
                 return self._conflict(request.operation_id)
 
-            local_deadline = self._local_deadline(request, 20_000)
-            if isinstance(local_deadline, ErrorResultDTO):
-                return local_deadline
-
-            if request.repair_authorization_hash != request.expected_authorization_hash():
-                result = self._error(request.operation_id, "invalid_extraction_schema")
-                self._completed_repairs[request.operation_id] = (request, result)
-                return result
-
-            prior_operation = self._repair_attempts.get(
+            self._operation_authorizations[request.operation_id] = (
                 request.repair_authorization_hash
             )
-            if prior_operation is not None and prior_operation != request.operation_id:
-                return self._conflict(request.operation_id)
-            self._repair_attempts[request.repair_authorization_hash] = request.operation_id
+
+            # Only a fresh, validated replay identity receives a new local
+            # deadline. Completed replays above intentionally ignore envelope
+            # changes, including an already-expired replay deadline.
+            local_deadline = self._local_deadline(request, 20_000)
+            if isinstance(local_deadline, ErrorResultDTO):
+                self._completed_repairs[identity] = local_deadline
+                return local_deadline
 
             clean_content = self._resolve_content(request, local_deadline)
             if isinstance(clean_content, ErrorResultDTO):
-                self._completed_repairs[request.operation_id] = (
-                    request,
-                    clean_content,
-                )
+                self._completed_repairs[identity] = clean_content
                 return clean_content
 
-            actual_hash = "sha256:" + hashlib.sha256(
-                clean_content.encode("utf-8")
-            ).hexdigest()
+            encoded_content = clean_content.encode("utf-8")
+            if len(encoded_content) > REPAIR_CONTENT_MAX_UTF8_BYTES:
+                result = self._error(request.operation_id, "input_too_large")
+                self._completed_repairs[identity] = result
+                return result
+
+            actual_hash = "sha256:" + hashlib.sha256(encoded_content).hexdigest()
             if actual_hash != request.clean_content_hash:
                 result = self._error(
                     request.operation_id,
                     "repair_content_hash_mismatch",
                 )
-                self._completed_repairs[request.operation_id] = (request, result)
+                self._completed_repairs[identity] = result
                 return result
 
             expired = self._expired(local_deadline, request.operation_id)
             if expired is not None:
-                self._completed_repairs[request.operation_id] = (request, expired)
+                self._completed_repairs[identity] = expired
                 return expired
 
             self.provider_invocation_count += 1
@@ -354,15 +366,15 @@ class FakeEvidenceExtractorV2:
             )
             expired = self._expired(local_deadline, request.operation_id)
             if expired is not None:
-                self._completed_repairs[request.operation_id] = (request, expired)
+                self._completed_repairs[identity] = expired
                 return expired
-            result = self._validate_result(
+            terminal_result = self._validate_result(
                 request,
                 clean_content,
                 provider_result,
             )
-            self._completed_repairs[request.operation_id] = (request, result)
-            return result
+            self._completed_repairs[identity] = terminal_result
+            return terminal_result
 
     def health_check(
         self,
