@@ -218,7 +218,7 @@ class FakeFormalRunStepExecutor:
                 evidence_id = f"EVID-{identity}"
                 raw_record_id = f"RAW-{identity}"
                 seed = f"{question}:{','.join(assets)}:{task_id}:{execution_id}:{job_id}"
-                clean_content = f"Deterministic fake content for {asset}: {question[:100]}"
+                clean_content = f"可重現的 {asset} 本機 fake 內容：{question[:100]}"
                 evidence_items.append(
                     EvidenceDTO(
                         evidence_id=evidence_id,
@@ -306,7 +306,7 @@ class FakeFormalRunStepExecutor:
                 AnalysisRefDTO(
                     analysis_id=f"ANALYSIS-{task_id[5:]}:{index:03d}",
                     analysis_version="1.0.0",
-                    summary=f"Deterministic market regime analysis for {asset}.",
+                    summary=f"針對 {asset} 的可重現市場情勢分析。",
                     source_refs=(f"DATASET:{asset}_daily_ohlcv.csv:lines:1-100",),
                 )
                 for index, asset in enumerate(assets, start=1)
@@ -327,7 +327,7 @@ class FakeFormalRunStepExecutor:
                         f"CONTRA-{task_id[5:]}:{index:03d}",
                         (evidence_ids[0], evidence_ids[index % len(evidence_ids)]),
                         "low",
-                        "Deterministic fake strategy contradiction.",
+                        "可重現的 fake 策略矛盾訊號。",
                     )
                     for index in range(1, min(contradiction_count, len(evidence_ids) - 1) + 1)
                 )
@@ -350,19 +350,19 @@ class FakeFormalRunStepExecutor:
             analysis_refs = analysis_ids[:1]
             fact = FactDTO(
                 f"FACT-{task_id[5:]}:001",
-                f"Available verified inputs show mixed signals for {', '.join(assets)}.",
+                f"可用且已驗證的輸入顯示 {', '.join(assets)} 訊號分歧。",
                 evidence_refs,
                 analysis_refs,
             )
             inference = InferenceDTO(
                 f"INFER-{task_id[5:]}:001",
-                "No strong directional edge is established by the available inputs.",
+                "可用輸入尚未建立明確方向優勢。",
                 (fact.fact_id,),
                 "0.7",
             )
             conclusion = ConclusionDTO(
                 f"CONCL-{task_id[5:]}:001",
-                f"The available evidence supports a neutral assessment for {assets[0]} with limited directional conviction.",
+                f"可用證據支持對 {assets[0]} 採取中性評估，方向信心有限。",
                 (fact.fact_id,),
                 (inference.inference_id,),
                 "0.7",
@@ -378,8 +378,8 @@ class FakeFormalRunStepExecutor:
                 facts=(fact,),
                 inferences=(inference,),
                 conclusions=(conclusion,),
-                limitations=("Analysis uses deterministic fake data only.",),
-                watchpoints=(f"Monitor {assets[0]} for regime changes.",),
+                limitations=("分析僅使用可重現的本機 fake 資料。",),
+                watchpoints=(f"持續觀察 {assets[0]} 的市場情勢變化。",),
                 confidence_components=ConfidenceComponentsDTO(
                     "0.8", "0.75", "0.7", "0.75"
                 ),

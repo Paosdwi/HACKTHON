@@ -69,10 +69,47 @@ class PackageBoundaryTests(unittest.TestCase):
         }
         self._assert_no_forbidden_imports(PACKAGE_ROOT / "application", forbidden)
 
-    def test_presentation_does_not_wire_infrastructure_directly(self) -> None:
-        self._assert_no_forbidden_imports(
-            PACKAGE_ROOT / "presentation",
-            {"crypto_trust_agent.infrastructure"},
+    def test_presentation_only_wires_local_adapters_in_named_composition_root(self) -> None:
+        presentation = PACKAGE_ROOT / "presentation"
+        composition = presentation / "api" / "demo_ui_composition.py"
+        violations: list[str] = []
+        for source_file in sorted(presentation.rglob("*.py")):
+            if source_file == composition:
+                continue
+            for module in sorted(imported_modules(source_file)):
+                if module == "crypto_trust_agent.infrastructure" or module.startswith(
+                    "crypto_trust_agent.infrastructure."
+                ):
+                    violations.append(
+                        f"{source_file.relative_to(PROJECT_ROOT)} imports {module}"
+                    )
+        self.assertEqual([], violations, "\n".join(violations))
+
+        composition_imports = imported_modules(composition)
+        allowed_roots = {
+            "crypto_trust_agent.infrastructure.fakes",
+            "crypto_trust_agent.infrastructure.identity",
+        }
+        concrete_imports = {
+            module
+            for module in composition_imports
+            if module == "crypto_trust_agent.infrastructure"
+            or module.startswith("crypto_trust_agent.infrastructure.")
+        }
+        unexpected = {
+            module
+            for module in concrete_imports
+            if not any(
+                module == root or module.startswith(f"{root}.")
+                for root in allowed_roots
+            )
+        }
+        self.assertEqual(set(), unexpected)
+        self.assertTrue(
+            any(module.startswith("crypto_trust_agent.infrastructure.fakes") for module in concrete_imports)
+        )
+        self.assertTrue(
+            any(module.startswith("crypto_trust_agent.infrastructure.identity") for module in concrete_imports)
         )
 
     def _assert_no_forbidden_imports(
