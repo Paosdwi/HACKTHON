@@ -185,6 +185,21 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         self.assertIn("分析進度", status.text)
         self.assertIn("查看完整回答", status.text)
 
+    def test_explicit_xrp_question_overrides_default_all_asset_selection(self) -> None:
+        self.client.get("/")
+        submitted = self.client.post(
+            "/demo/submit",
+            data=submission(
+                "請只分析 XRP 的市場狀況與主要風險。",
+                ["BTC", "ETH", "SOL", "BNB", "XRP"],
+            ),
+            follow_redirects=False,
+        )
+
+        self.assertEqual(303, submitted.status_code, submitted.text)
+        proposed = next(iter(self.composition.store.proposed_tasks.values()))
+        self.assertEqual(("XRP",), proposed["assets_requested_order"])
+
 
 class OwnershipAndAuthenticationHttpTests(unittest.TestCase):
     def setUp(self) -> None:

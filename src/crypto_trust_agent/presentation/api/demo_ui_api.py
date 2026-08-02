@@ -30,6 +30,37 @@ _IDENTITY_FIELDS = frozenset({
     "cognito:groups",
 })
 _DEFAULT_COOKIE_NAME = "crypto_trust_demo_session"
+_ASSET_ALIASES = {
+    "BTC": ("BTC", "BITCOIN", "比特幣", "比特币"),
+    "ETH": ("ETH", "ETHEREUM", "以太坊"),
+    "SOL": ("SOL", "SOLANA", "索拉納", "索拉纳"),
+    "BNB": ("BNB", "BINANCE COIN", "幣安幣", "币安币"),
+    "XRP": ("XRP", "RIPPLE", "瑞波幣", "瑞波币"),
+}
+
+
+def _explicit_question_assets(question: str) -> tuple[str, ...]:
+    """Return explicitly named supported assets in first-mention order."""
+
+    mentions: list[tuple[int, str]] = []
+    for asset, aliases in _ASSET_ALIASES.items():
+        positions: list[int] = []
+        for alias in aliases:
+            if alias.isascii():
+                match = re.search(
+                    rf"(?<![A-Z0-9]){re.escape(alias)}(?![A-Z0-9])",
+                    question,
+                    flags=re.IGNORECASE,
+                )
+                if match is not None:
+                    positions.append(match.start())
+            else:
+                position = question.find(alias)
+                if position >= 0:
+                    positions.append(position)
+        if positions:
+            mentions.append((min(positions), asset))
+    return tuple(asset for _, asset in sorted(mentions))
 
 
 class DemoAuthenticator(Protocol):
@@ -118,9 +149,13 @@ class DemoUiHttpHandler:
             assets = tuple(str(item) for item in assets_value)
         else:
             raise DemoUseCaseError("validation_error")
+        question = self._scalar(body, "question", "")
+        explicitly_named = _explicit_question_assets(question)
+        if explicitly_named:
+            assets = explicitly_named
         result = self._use_case.submit_and_run(
             principal=principal,
-            question=self._scalar(body, "question", ""),
+            question=question,
             assets=assets,
             timeframe_start=self._scalar(body, "timeframe_start", "2026-07-18T00:00:00Z"),
             timeframe_end=self._scalar(body, "timeframe_end", "2026-08-01T00:00:00Z"),
