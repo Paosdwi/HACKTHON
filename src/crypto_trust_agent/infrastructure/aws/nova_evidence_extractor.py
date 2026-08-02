@@ -11,6 +11,9 @@ from typing import Protocol
 
 
 class NovaRuntimeInvoker(Protocol):
+    max_attempts: int
+    hidden_retries: int
+
     def invoke(self, *, model_id: str, region: str, payload: Mapping[str, object],
                timeout_ms: int, cancelled: Callable[[], bool]) -> Mapping[str, object]: ...
 
@@ -22,12 +25,18 @@ class ExplicitLiveNovaClient:
     """Thin opt-in boundary; credentials and auth headers remain inside invoker."""
 
     non_production = False
+    max_attempts = 1
+    hidden_retries = 0
 
     def __init__(self, invoker: NovaRuntimeInvoker, *, model_id: str, region: str, enabled: bool) -> None:
         if not enabled:
             raise RuntimeError("Live Nova extraction requires explicit opt-in")
         if not model_id or not region:
             raise ValueError("Live Nova model and region must be configured")
+        if invoker.max_attempts != 1 or invoker.hidden_retries != 0:
+            raise ValueError(
+                "Nova invoker must use one attempt and zero hidden retries"
+            )
         self._invoker = invoker
         self._model_id = model_id
         self._region = region
