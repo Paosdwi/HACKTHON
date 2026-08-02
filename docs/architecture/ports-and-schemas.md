@@ -31,6 +31,7 @@
 | ArtifactRepository | [`artifact_repository/contract.schema.json`](schemas/artifact_repository/contract.schema.json) | `put`, `get`, `list_for_execution`, `put_manifest`, `get_manifest` | `CT-ART-PUT-01`, `CT-ART-GET-01`, `CT-ART-LIST-01`, `CT-ART-PUT-MANIFEST-01`, `CT-ART-GET-MANIFEST-01` |
 | EventPublisher | [`event_publisher/contract.schema.json`](schemas/event_publisher/contract.schema.json) | `publish`, `publish_batch` | `CT-EVENT-PUBLISH-01`, `CT-EVENT-BATCH-01` |
 | SourceCollector | [`source_collector/contract.schema.json`](schemas/source_collector/contract.schema.json) | `collect`, `health_check`, `capabilities` | `CT-COLLECT-COLLECT-01`, `CT-COLLECT-HEALTH-01`, `CT-COLLECT-CAPABILITIES-01` |
+| LiveMarketDataProvider | [`live_market_data_provider/contract.schema.json`](schemas/live_market_data_provider/contract.schema.json) | `fetch_daily_ohlcv`, `health_check`, `capabilities` | `CT-LIVE-MARKET-FETCH-01`, `CT-LIVE-MARKET-HEALTH-01`, `CT-LIVE-MARKET-CAPABILITIES-01` |
 | EvidenceExtractor 1.0.0 (frozen) | [`evidence_extractor/contract.schema.json`](schemas/evidence_extractor/contract.schema.json) | `extract`, quarantine-only `repair`, `health_check` | `CT-EXTRACT-EXTRACT-01`, `CT-EXTRACT-REPAIR-01`, `CT-EXTRACT-HEALTH-01` |
 | EvidenceExtractor 2.0.0 | [`evidence_extractor_v2/contract.schema.json`](schemas/evidence_extractor_v2/contract.schema.json) | unchanged `extract`, authoritative successful `repair`, unchanged `health_check` | `CT-EXTRACT-EXTRACT-01`, `CT-EXTRACT-REPAIR-02`, `CT-EXTRACT-HEALTH-01` |
 | MarketRegimeProvider | [`market_regime_provider/contract.schema.json`](schemas/market_regime_provider/contract.schema.json) | `infer`, `health_check` | `CT-MARKET-INFER-01`, `CT-MARKET-HEALTH-01` |
@@ -45,6 +46,7 @@ Examples：
 - [`ArtifactRepository valid`](schemas/artifact_repository/valid-examples.json) / [`invalid`](schemas/artifact_repository/invalid-examples.json)
 - [`EventPublisher valid`](schemas/event_publisher/valid-examples.json) / [`invalid`](schemas/event_publisher/invalid-examples.json)
 - [`SourceCollector valid`](schemas/source_collector/valid-examples.json) / [`invalid`](schemas/source_collector/invalid-examples.json)
+- [`LiveMarketDataProvider valid`](schemas/live_market_data_provider/valid-examples.json) / [`invalid`](schemas/live_market_data_provider/invalid-examples.json)
 - [`EvidenceExtractor 1.0.0 valid`](schemas/evidence_extractor/valid-examples.json) / [`invalid`](schemas/evidence_extractor/invalid-examples.json)
 - [`EvidenceExtractor 2.0.0 valid`](schemas/evidence_extractor_v2/valid-examples.json) / [`invalid`](schemas/evidence_extractor_v2/invalid-examples.json)
 - [`MarketRegimeProvider valid`](schemas/market_regime_provider/valid-examples.json) / [`invalid`](schemas/market_regime_provider/invalid-examples.json)
@@ -63,6 +65,7 @@ Examples：
 | ArtifactRepository | per file 5s；final write 20s target + 5s buffer；publication use case retry | same logical key/hash no-op；different hash conflict；Manifest last |
 | EventPublisher | publish 2s、batch 3s；Application retry | at-least-once；event ID dedup；same ID/different payload conflict |
 | SourceCollector | connect 3s、read 10s、static 15s、Playwright 30s；orchestrator retry owner | completed operation replay；new fetch requires new operation ID；per-host concurrency 2 |
+| LiveMarketDataProvider | page ≤10s、operation ≤30s、health/capabilities ≤3s；Core retry owner、adapter zero hidden retry | operation + canonical request replay；fixed Binance public read-only endpoint；capabilities no I/O |
 | EvidenceExtractor 1.0.0 | repair ≤20s once；Core retry/repair owner | `CT-EXTRACT-REPAIR-01` remains quarantine-only；operation + raw/context identity；invalid after repair quarantined |
 | EvidenceExtractor 2.0.0 | aggregate repair ≤20s once；Core retry/repair owner；adapter attempt 1／hidden retry 0；clean content runtime maximum 1,048,576 UTF-8 bytes | `CT-EXTRACT-REPAIR-02` 固定 schema `2.0.0`、output schema `1.0.0` 與 ruleset `repair-authorization-2.0.0`，並將 `context_hash` 納入 authority；replay identity 是 operation + authorization hash；completed same-identity replay 忽略 deadline envelope 改變（含已過期 replay deadline）；同 operation 下合法 v2 authority fields 改變才是 `payload_conflict`；不同／不支援 ruleset 產生的 supplied hash 在 replay lookup、locator/provider I/O 前 fail closed 為非-conflict `invalid_extraction_schema`；超限回 non-retryable `input_too_large` 且 provider invocation 為 0；v2 failure never downgrades to v1 success |
 | MarketRegimeProvider | infer ≤25s、zero retry、5s Core fallback reserve | stateless inference；operation + feature hash + model identify invocation |
@@ -118,6 +121,7 @@ Normal bundle 目標維持全部格式。Degraded publication 的最低 bundle�
 | Evidence / pagination / latest | CP-FR005 | ADR-005 + EvidenceRepository schema |
 | Preflight atomic validity | CP-FR011 | ADR-006 + Task/Execution schemas |
 | Collector security | CP-FR003/004 | ADR-007 + SourceCollector schema |
+| Live market extension | CP-FR007 | Approved OQ-B013 + LiveMarketDataProvider schema + `live-market-reconciliation-1.0.0` |
 | Reasoning context | CP-FR009 | ADR-008 + ReasoningProvider schema |
 | Artifact minimum | CP-FR010 | ADR-009 + ArtifactRepository schema |
 | Ownership / change flow | CP-PORT-* | ADR-010 |
@@ -126,9 +130,9 @@ Normal bundle 目標維持全部格式。Degraded publication 的最低 bundle�
 
 本輪離線驗證使用 `jsonschema.Draft202012Validator.check_schema` 與 `referencing.Registry`：
 
-- schemas：12（common + 十個 frozen 1.0.0 Port schema + EvidenceExtractor 2.0.0 sibling schema）
-- Port capabilities：10；machine-readable contract versions：11
-- unique stable method contract IDs：38（原 37 個保持不變，新增 `CT-EXTRACT-REPAIR-02`）
+- schemas：13（common + 十一個 1.0.0 Port schema + EvidenceExtractor 2.0.0 sibling schema）
+- Port capabilities：11；machine-readable contract versions：12
+- unique stable method contract IDs：41（既有 38 個保持不變，新增三個 LiveMarketDataProvider IDs）
 - valid examples：45/45 accepted（既有 37 + EvidenceExtractor 2.0.0 的 8）
 - invalid examples：57/57 handled（既有 37 個 schema-invalid + v2 的 16 個 schema-invalid／4 個 semantic-invalid）
 - failures：0

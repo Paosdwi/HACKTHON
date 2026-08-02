@@ -117,6 +117,15 @@ Planner 固定 category/query/assets/range/priority/budget/requirement。Web Gro
 - Adapter 只能回 schema-valid provider result 或 typed error，**不得生成 fallback probabilities、synthetic regime 或 Core AnalysisResult**。
 - Timeout/unavailable/invalid output 後，Core 建立版本化 deterministic fallback `AnalysisResult`，記 formula/ruleset、source refs、quality/limitations，揭露 provider absence。
 
+## 10.1 LiveMarketDataProvider
+
+- Production live extension 固定使用 Binance Spot public `GET /api/v3/klines`，只允許 BTC/ETH/SOL/BNB/XRP 對 USDT、`1d`、UTC closed candles。
+- Adapter 直接以 Decimal 解析 provider numeric strings，禁止 binary float；source URL、fetch time、content hash、provider ruleset 與 `live_extension` provenance 必須保留。
+- Core 以 `live-market-reconciliation-1.0.0` 驗證三天 overlap：OHLC 相對容許 1%，base-volume 25%。官方資料永遠優先，reconciliation failure 不得覆寫官方 rows。
+- 2026-06-01 起才加入 live rows；missing/incomplete day 必須形成 limitation，禁止 forward-fill、插值或重用官方最後價格。
+- Page timeout ≤10s、operation ≤30s、health/capabilities ≤3s；Core 是 retry owner，adapter attempt 1、hidden retry 0。
+- Geographic/access denial 必須讓 pre-flight fail closed；secondary provider 需獨立 versioned proposal/ruleset。
+
 ## 11. ReasoningProvider
 
 - 只接收 task-scoped、validated Structured Reasoning Context；禁止 network/database/object-store/secret tools 與 raw HTML。

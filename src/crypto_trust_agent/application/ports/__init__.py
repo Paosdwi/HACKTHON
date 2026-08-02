@@ -14,6 +14,7 @@ from crypto_trust_agent.application.ports.evidence_strategies import (
     TrustComponentStrategy,
 )
 from crypto_trust_agent.application.ports.market_regime import MarketRegimeProvider
+from crypto_trust_agent.application.ports.live_market import LiveMarketDataProvider
 from crypto_trust_agent.application.ports.preflight import (
     HealthCheckPort,
     HealthCheckRequestDTO,
@@ -50,6 +51,7 @@ __all__ = (
     "HealthCheckRequestDTO",
     "IndependenceGroupingStrategy",
     "MarketRegimeProvider",
+    "LiveMarketDataProvider",
     "ProviderHealthDTO",
     "ReasoningProvider",
     "ReasoningHealthCheckRequestDTO",

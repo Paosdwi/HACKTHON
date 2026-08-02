@@ -1,0 +1,15 @@
+{
+  "contract": "https://schemas.cryptotrust.local/ports/live-market-data-provider/1.0.0/contract.schema.json",
+  "examples": [
+    {
+      "test_id": "CT-LIVE-MARKET-FETCH-01",
+      "value": {
+        "method": "fetch_daily_ohlcv",
+        "request": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-01", "asset": "BTC", "pair": "BTCUSDT", "start_date": "2026-06-01", "end_date": "2026-06-01", "as_of": "2026-06-02T12:00:00Z", "deadline": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-01", "deadline_at_utc": "2026-06-02T12:00:30Z", "budget_ms": 30000, "sent_at_utc": "2026-06-02T12:00:00Z", "safety_margin_ms": 100}, "interval": "1d", "expected_provider": "binance_spot", "provider_ruleset_version": "binance-live-market-1.0.0"},
+        "response": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-01", "asset": "BTC", "pair": "BTCUSDT", "requested_start_date": "2026-06-01", "requested_end_date": "2026-06-01", "bars": [{"schema_version": "1.0.0", "asset": "BTC", "pair": "BTCUSDT", "day": "2026-06-01", "open": "100", "high": "105", "low": "95", "close": "101", "volume": "1234.5", "source_url": "https://api.binance.com/api/v3/klines?symbol=BTCUSDT", "fetched_at": "2026-06-02T12:00:01Z", "source_open_time_ms": 1780272000000, "source_close_time_ms": 1780358399999, "content_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "interval": "1d", "provider": "binance_spot", "provider_ruleset_version": "binance-live-market-1.0.0", "provenance": "live_extension"}], "complete": true, "missing_dates": [], "incomplete_dates": [], "fetched_at": "2026-06-02T12:00:01Z", "provider": "binance_spot", "provider_ruleset_version": "binance-live-market-1.0.0"}
+      }
+    },
+    {"test_id": "CT-LIVE-MARKET-HEALTH-01", "value": {"method": "health_check", "request": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-HEALTH", "deadline": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-HEALTH", "deadline_at_utc": "2026-06-02T12:00:03Z", "budget_ms": 3000, "sent_at_utc": "2026-06-02T12:00:00Z", "safety_margin_ms": 100}}, "response": {"schema_version": "1.0.0", "provider": "binance_spot", "capability": "live_market_data", "status": "healthy", "checked_at": "2026-06-02T12:00:01Z", "latency_ms": 100, "safe_reason_code": null, "expires_at": null}}},
+    {"test_id": "CT-LIVE-MARKET-CAPABILITIES-01", "value": {"method": "capabilities", "request": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-CAP", "deadline": {"schema_version": "1.0.0", "operation_id": "OP-LIVE-CAP", "deadline_at_utc": "2026-06-02T12:00:03Z", "budget_ms": 3000, "sent_at_utc": "2026-06-02T12:00:00Z", "safety_margin_ms": 100}}, "response": {"schema_version": "1.0.0", "assets": ["BTC", "ETH", "SOL", "BNB", "XRP"], "pairs": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"], "interval": "1d", "timezone": "UTC", "quote_asset": "USDT", "max_page_size": 1000, "authentication": "none", "provider": "binance_spot", "provider_ruleset_version": "binance-live-market-1.0.0"}}}
+  ]
+}

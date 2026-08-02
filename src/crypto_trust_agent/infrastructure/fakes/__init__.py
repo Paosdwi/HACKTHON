@@ -18,6 +18,7 @@ from crypto_trust_agent.infrastructure.fakes.evidence_strategies import (
     FakeTrustComponentStrategy,
 )
 from crypto_trust_agent.infrastructure.fakes.market_regime import FakeMarketRegimeProvider
+from crypto_trust_agent.infrastructure.fakes.live_market import FakeLiveMarketDataProvider
 from crypto_trust_agent.infrastructure.fakes.preflight import (
     FakeProviderHealthProbe,
     FakeTaskReadinessProbe,
@@ -47,6 +48,7 @@ __all__ = (
     "FakeFormalRunStepExecutor",
     "FakeIndependenceGroupingStrategy",
     "FakeMarketRegimeProvider",
+    "FakeLiveMarketDataProvider",
     "FakePlatformStore",
     "FakeProviderHealthProbe",
     "FakeReasoningProvider",

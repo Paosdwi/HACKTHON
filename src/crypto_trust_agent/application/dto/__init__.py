@@ -58,6 +58,14 @@ from crypto_trust_agent.application.dto.source_collector import (
     RawRecordDTO,
     SecurityResultDTO,
 )
+from crypto_trust_agent.application.dto.live_market import (
+    LiveMarketBarDTO,
+    LiveMarketCapabilitiesDTO,
+    LiveMarketCapabilitiesRequestDTO,
+    LiveMarketDataRequestDTO,
+    LiveMarketDataResultDTO,
+    LiveMarketHealthRequestDTO,
+)
 
 __all__ = (
     "AnalysisRefDTO",
@@ -94,6 +102,12 @@ __all__ = (
     "ExtractorHealthCheckRequestDTO",
     "InlineContentInputDTO",
     "LocalDeadline",
+    "LiveMarketBarDTO",
+    "LiveMarketCapabilitiesDTO",
+    "LiveMarketCapabilitiesRequestDTO",
+    "LiveMarketDataRequestDTO",
+    "LiveMarketDataResultDTO",
+    "LiveMarketHealthRequestDTO",
     "LocatorContentInputDTO",
     "PortErrorCategory",
     "PortErrorDTO",

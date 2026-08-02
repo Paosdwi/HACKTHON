@@ -76,7 +76,7 @@ Final Report 應包含直接回答、market judgment、Facts、Inferences、Conc
 
 - 官方 CSV 是歷史市場分析共同基準，不得被外部資料覆寫。
 - 資料為 UTC、USDT、日線，五資產各 1,826 筆，期間 2021-06-01 至 2026-05-31。
-- reporting range 超過 2026-05-31 必須使用合格 live extension，揭露 `transition_date` 與逐筆 provenance；provider/credential/health 細節仍是 OQ-B013。
+- reporting range 超過 2026-05-31 必須使用核准 OQ-B013 的 Binance Spot live extension，揭露 `transition_date` 與逐筆 provenance；public endpoint 不需 credential，但 health/schema/UTC/USDT/Decimal/overlap readiness 仍須通過。
 - 缺資料不得以最後一筆靜默填補；不得直接比較不同資產的 base-asset volume 絕對值。
 
 ## 產品成功條件
