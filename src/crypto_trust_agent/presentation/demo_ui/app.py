@@ -79,10 +79,21 @@ class DemoDownloadResult:
 class DemoApp:
     """Presentation facade.  All system reads go through DemoUseCase."""
 
-    def __init__(self, use_case: DemoUseCase) -> None:
+    def __init__(self, use_case: DemoUseCase, *, live_mode: bool = False) -> None:
         self._use_case = use_case
+        self._live_mode = live_mode
 
     def render_home(self) -> DemoPageResult:
+        if self._live_mode:
+            deployment_copy = (
+                '<p class="microcopy">此公開 Demo 正在 AWS ECS Fargate 執行，會連線至真實公開市場與新聞來源。</p>'
+                '<p class="microcopy">市場推理使用 Amazon Bedrock Claude；執行失敗時不會以假模型結果冒充。</p>'
+            )
+        else:
+            deployment_copy = (
+                '<p class="microcopy">此頁目前使用可重現的 Core 本機 fake adapters，不會連線至 AWS、外部 provider 或網路，也不需要任何 credential。</p>'
+                '<p class="microcopy">正式部署時會由相同 Port 接上受控的 AWS provider adapters。</p>'
+            )
         asset_inputs = "".join(
             f'<label><input type="checkbox" name="assets" value="{escape_html(asset)}"'
             f'{" checked" if asset == "BTC" else ""}><span class="asset-chip">{escape_html(asset)}</span></label>'
@@ -114,8 +125,7 @@ class DemoApp:
             '<li><span class="capability-icon">↗</span><div><strong>來源可追溯</strong><span>保留網址、取得時間、引用與內容雜湊</span></div></li>'
             '<li><span class="capability-icon">±</span><div><strong>正反訊號</strong><span>區分支持、矛盾與背景證據</span></div></li>'
             '<li><span class="capability-icon">!</span><div><strong>限制透明</strong><span>資料不足時明確降級，不硬給結論</span></div></li></ul>'
-            '<p class="microcopy">此頁目前使用可重現的 Core 本機 fake adapters，不會連線至 AWS、外部 provider 或網路，也不需要任何 credential。</p>'
-            '<p class="microcopy">正式部署時會由相同 Port 接上受控的 AWS provider adapters。</p>'
+            f'{deployment_copy}'
             '</aside></div>'
         )
         title = "CryptoTrust Agent－本機示範"

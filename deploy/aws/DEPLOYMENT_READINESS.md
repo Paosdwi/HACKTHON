@@ -16,7 +16,7 @@
 
 1. Workshop role can create CloudFormation/IAM/ECR/ECS/ALB resources.
 2. Bedrock Claude Opus 4.8 is accessible from `us-west-2` through the
-   `us.anthropic.claude-opus-4-8` inference profile.
+   `us.anthropic.claude-sonnet-4-20250514-v1:0` inference profile.
 3. Container image is pushed with the current Git SHA tag.
 4. ECS service reaches a healthy target and CloudWatch contains no startup
    error.

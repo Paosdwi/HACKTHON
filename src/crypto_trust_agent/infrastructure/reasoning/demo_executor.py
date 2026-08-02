@@ -42,6 +42,7 @@ from crypto_trust_agent.infrastructure.collectors.google_news_demo import (
     DemoNewsItem,
     GoogleNewsRssCollector,
 )
+from crypto_trust_agent.infrastructure.collectors.binance_us_demo import DemoMarketSnapshot
 
 
 class DemoClock(Protocol):
@@ -54,6 +55,10 @@ class DelegateExecutor(Protocol):
 
 class DemoNewsCollector(Protocol):
     def collect(self, asset: str, category: str, *, timeout_seconds: float = 8.0) -> tuple[DemoNewsItem, ...]: ...
+
+
+class DemoMarketCollector(Protocol):
+    def collect(self, asset: str, start, end, *, timeout_ms: int = 10_000) -> DemoMarketSnapshot: ...
 
 
 def _digest(value: str) -> str:
@@ -73,12 +78,14 @@ class AwsDemoFormalRunStepExecutor:
         reasoning_provider: ReasoningProvider,
         market_provider: LiveMarketDataProvider,
         news_collector: DemoNewsCollector | None = None,
+        market_fallback: DemoMarketCollector | None = None,
     ) -> None:
         self._delegate = delegate
         self._clock = clock
         self._reasoning = reasoning_provider
         self._market = market_provider
         self._news = news_collector or GoogleNewsRssCollector()
+        self._market_fallback = market_fallback
 
     def execute(self, request: FormalRunStepRequest) -> FormalRunStepResult:
         if request.step is FormalRunStep.EXTRACTION:
@@ -212,21 +219,40 @@ class AwsDemoFormalRunStepExecutor:
                 str(now),
                 deadline,
             ))
-            if not isinstance(result, LiveMarketDataResultDTO) or not result.bars:
+            if isinstance(result, LiveMarketDataResultDTO) and result.bars:
+                first, last = result.bars[0], result.bars[-1]
+                first_close = first.close.as_decimal()
+                last_close = last.close.as_decimal()
+                first_day = first.day
+                last_day = last.day
+                latest_volume = last.volume
+                source_url = last.source_url
+                provider_label = "Binance"
+            elif self._market_fallback is not None:
+                try:
+                    fallback = self._market_fallback.collect(asset, start, end)
+                except Exception:
+                    continue
+                first_close = fallback.first_close
+                last_close = fallback.last_close
+                first_day = fallback.first_day
+                last_day = fallback.last_day
+                latest_volume = str(fallback.latest_volume)
+                source_url = fallback.source_url
+                provider_label = "Binance.US"
+            else:
                 continue
-            first, last = result.bars[0], result.bars[-1]
-            first_close = first.close.as_decimal()
-            change = Decimal("0") if first_close == 0 else ((last.close.as_decimal() - first_close) / first_close) * Decimal("100")
+            change = Decimal("0") if first_close == 0 else ((last_close - first_close) / first_close) * Decimal("100")
             summary = (
-                f"{asset}/USDT Binance daily OHLCV {first.day.isoformat()} to {last.day.isoformat()}: "
-                f"latest close {last.close} USDT; period change {change.quantize(Decimal('0.01'))}% ; "
-                f"latest volume {last.volume}."
+                f"{asset}/USDT {provider_label} daily OHLCV {first_day.isoformat()} to {last_day.isoformat()}: "
+                f"latest close {last_close} USDT; period change {change.quantize(Decimal('0.01'))}% ; "
+                f"latest volume {latest_volume}."
             )
             analyses.append(AnalysisRefDTO(
                 f"ANALYSIS-{request.task_id[5:]}:{index:03d}",
                 "1.0.0",
                 summary,
-                (last.source_url,),
+                (source_url,),
             ))
         events = self._delegate_events(request)
         if not analyses:
@@ -267,7 +293,7 @@ class AwsDemoFormalRunStepExecutor:
         )
         limitations = tuple(dict.fromkeys((
             *snapshot.limitations,
-            "Public demo uses bounded public news RSS and Binance daily closed OHLCV.",
+            "Public demo uses bounded public news RSS and Binance/Binance.US daily closed OHLCV.",
         )))
         context = ReasoningContextDTO(
             snapshot.question,

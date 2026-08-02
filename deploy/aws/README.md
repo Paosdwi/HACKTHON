@@ -57,7 +57,7 @@ aws cloudformation deploy `
     VpcId=$vpcId `
     PublicSubnetIds=$subnets `
     ImageTag=$imageTag `
-    BedrockModelId=us.anthropic.claude-opus-4-8 `
+    BedrockModelId=us.anthropic.claude-sonnet-4-20250514-v1:0 `
     DesiredCount=1
 ```
 
@@ -71,10 +71,10 @@ aws cloudformation describe-stacks `
   --output text
 ```
 
-If Claude access is denied in the workshop account, open the Bedrock model
-catalog once, confirm Anthropic access/use-case details, and redeploy without
-changing source code. AWS documents the model and inference profile IDs here:
-<https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-8.html>.
+The workshop account was live-verified with the Claude Sonnet 4 cross-Region
+inference profile above. The AWS demo first attempts the frozen global Binance
+adapter, then uses a separate, provenance-preserving Binance.US demo fallback
+when the global endpoint is blocked from the AWS Region.
 
 ## Stop charges after the demo
 

@@ -12,5 +12,5 @@
   {"ParameterKey": "CertificateArn", "ParameterValue": ""},
   {"ParameterKey": "PublicHostname", "ParameterValue": ""},
   {"ParameterKey": "RuntimeSecretArn", "ParameterValue": ""},
-  {"ParameterKey": "BedrockModelId", "ParameterValue": "us.anthropic.claude-opus-4-8"}
+  {"ParameterKey": "BedrockModelId", "ParameterValue": "us.anthropic.claude-sonnet-4-20250514-v1:0"}
 ]

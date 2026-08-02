@@ -55,7 +55,7 @@ class DeploymentScaffoldTests(unittest.TestCase):
     def test_no_secret_account_bucket_or_endpoint_is_hardcoded(self) -> None:
         self.assertEqual("", self.template["Parameters"]["RuntimeSecretArn"]["Default"])
         self.assertEqual(
-            "us.anthropic.claude-opus-4-8",
+            "us.anthropic.claude-sonnet-4-20250514-v1:0",
             self.template["Parameters"]["BedrockModelId"]["Default"],
         )
         self.assertNotRegex(self.template_text, re.compile(r"\b\d{12}\b"))

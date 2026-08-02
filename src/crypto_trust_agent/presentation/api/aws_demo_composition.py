@@ -16,6 +16,7 @@ from crypto_trust_agent.application.use_cases.preflight import PreflightUseCase
 from crypto_trust_agent.application.use_cases.start_formal_execution import StartFormalExecutionUseCase
 from crypto_trust_agent.infrastructure.aws.bedrock_demo import DemoBedrockReasoningClient
 from crypto_trust_agent.infrastructure.collectors.binance_live_market import BinanceLiveMarketDataProvider
+from crypto_trust_agent.infrastructure.collectors.binance_us_demo import BinanceUsDemoMarketCollector
 from crypto_trust_agent.infrastructure.fakes import (
     FakeArtifactRepository,
     FakeClock,
@@ -80,7 +81,7 @@ def build_aws_demo_composition(
     )
 
     live_client = reasoning_client or DemoBedrockReasoningClient.from_environment()
-    model_id = os.getenv("CRYPTOTRUST_BEDROCK_MODEL_ID", "us.anthropic.claude-opus-4-8")
+    model_id = os.getenv("CRYPTOTRUST_BEDROCK_MODEL_ID", "us.anthropic.claude-sonnet-4-20250514-v1:0")
     reasoning = BedrockReasoningProvider(
         live_client,
         provider_name="amazon_bedrock",
@@ -94,6 +95,7 @@ def build_aws_demo_composition(
         reasoning_provider=reasoning,
         market_provider=market_provider or BinanceLiveMarketDataProvider.production(),
         news_collector=news_collector,
+        market_fallback=BinanceUsDemoMarketCollector(),
     )
     events = FakeEventPublisher(clock)
     publication = ArtifactPublicationService(artifacts, clock)

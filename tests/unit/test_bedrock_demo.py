@@ -61,7 +61,7 @@ class DemoBedrockTests(unittest.TestCase):
             cancelled=lambda: False,
         )
         self.assertEqual("bedrock-runtime", session.service_name)
-        self.assertEqual("us.anthropic.claude-opus-4-8", runtime.calls[0]["modelId"])
+        self.assertEqual("us.anthropic.claude-sonnet-4-20250514-v1:0", runtime.calls[0]["modelId"])
         self.assertNotIn("guardrailConfig", runtime.calls[0])
         self.assertEqual([], json.loads(result)["facts"])
 

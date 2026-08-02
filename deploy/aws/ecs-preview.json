@@ -67,7 +67,7 @@
     },
     "BedrockModelId": {
       "Type": "String",
-      "Default": "us.anthropic.claude-opus-4-8",
+      "Default": "us.anthropic.claude-sonnet-4-20250514-v1:0",
       "Description": "Bedrock Converse model or cross-Region inference profile ID."
     }
   },

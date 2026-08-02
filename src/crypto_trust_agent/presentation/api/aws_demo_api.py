@@ -15,7 +15,7 @@ from crypto_trust_agent.presentation.demo_ui.app import DemoApp
 
 composition = build_aws_demo_composition()
 handler = DemoUiHttpHandler(
-    DemoApp(composition.use_case),
+    DemoApp(composition.use_case, live_mode=True),
     composition.use_case,
     composition.authenticator,
     browser_token=DEMO_USER_TOKEN,
