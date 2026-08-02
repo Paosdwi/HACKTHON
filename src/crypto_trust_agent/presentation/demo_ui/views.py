@@ -10,6 +10,7 @@ import html as html_mod
 import json
 import re
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Mapping, Sequence
 
 from crypto_trust_agent.application.dto.repositories import ArtifactManifestDTO
@@ -67,6 +68,8 @@ _DISPLAY_CODE_MAP: dict[str, str] = {
     "degraded": "降級執行",
     "informational": "僅供參考",
     "supports": "支持",
+    "contradicts": "矛盾",
+    "context": "背景",
     "opposes": "反對",
 }
 
@@ -152,6 +155,7 @@ class DemoEvidenceView:
     lineage: Mapping[str, object]
     assessment_id: str
     assessment_version: str
+    assessment_sequence: int
     related_claims: tuple[Mapping[str, str], ...]
 
 
@@ -266,6 +270,7 @@ def build_evidence_view(entry: EvidenceListEntryDTO) -> DemoEvidenceView:
         lineage=lineage,
         assessment_id=entry.assessment_id,
         assessment_version=entry.assessment_version,
+        assessment_sequence=entry.assessment_sequence,
         related_claims=entry.related_claims,
     )
 
@@ -348,63 +353,109 @@ def build_log_entry_views(log: ExecutionLogDTO) -> tuple[DemoLogEntryView, ...]:
 
 def render_evidence_html(views: Sequence[DemoEvidenceView]) -> str:
     """Render evidence list as safe HTML fragment."""
-    parts = ['<div class="evidence-list"><h1>證據清單</h1>']
+    support_count = sum(
+        1 for view in views for claim in view.related_claims if claim.get("stance") == "supports"
+    )
+    contradiction_count = sum(
+        1 for view in views for claim in view.related_claims if claim.get("stance") == "contradicts"
+    )
+    parts = [
+        '<div class="artifact-shell evidence-list"><div class="report-intro">',
+        '<span class="eyebrow">Evidence workspace</span><h1>證據清單</h1>',
+        '<p class="helper">每張卡片保留來源、取得時間、引用內容、雜湊與資料血緣，讓判斷可以回到原始依據。</p></div>',
+        '<div class="metric-grid">',
+        f'<div class="metric-card"><div class="metric-label">證據筆數</div><div class="metric-value">{len(views)}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">支持關聯</div><div class="metric-value">{support_count}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">矛盾關聯</div><div class="metric-value">{contradiction_count}</div></div>',
+        f'<div class="metric-card"><div class="metric-label">完成評估</div><div class="metric-value">{sum(1 for view in views if view.assessment_id)}</div></div>',
+        '</div><p class="confidence-note"><strong>驗證方式：</strong>系統不把單篇新聞武斷標成絕對真或假；評估會結合來源可信度、時效性、獨立性、交叉一致性與反方證據。</p>',
+        '<div class="evidence-grid">',
+    ]
     for view in views:
         parts.append('<article class="evidence-item">')
-        parts.append(f'<h3>{escape_html(view.evidence_id)}</h3>')
-        parts.append('<dl>')
-        parts.append(f'<dt>來源</dt><dd>{escape_html(view.source)}</dd>')
-        parts.append(f'<dt>來源類型</dt><dd>{escape_html(view.source_type)}</dd>')
+        parts.append('<div class="evidence-top"><div>')
+        parts.append(f'<span class="source-chip">{escape_html(view.source_type)}</span><h3>{escape_html(view.source)}</h3>')
+        parts.append(f'<span class="helper">{escape_html(view.evidence_id)}</span></div>')
+        parts.append('<span class="status-pill ok">來源已可追溯</span></div>')
+        parts.append(f'<blockquote class="evidence-quote">{escape_html(view.quote)}</blockquote>')
+        parts.append('<dl class="evidence-meta">')
+        parts.append(f'<div><dt>來源</dt><dd>{escape_html(view.source)}</dd></div>')
+        parts.append(f'<div><dt>來源類型</dt><dd>{escape_html(view.source_type)}</dd></div>')
         if view.source_url:
-            parts.append(f'<dt>原始網址</dt><dd><a href="{escape_html(view.source_url)}">{escape_html(view.source_url)}</a></dd>')
-        parts.append(f'<dt>標準化網址</dt><dd>{escape_html(view.canonical_url)}</dd>')
-        parts.append(f'<dt>取得時間</dt><dd>{escape_html(view.fetched_at)}</dd>')
-        parts.append(f'<dt>引用內容</dt><dd><blockquote>{escape_html(view.quote)}</blockquote></dd>')
-        parts.append(f'<dt>內容雜湊</dt><dd><code>{escape_html(view.content_hash)}</code></dd>')
-        lineage_json = json.dumps(sanitize_value(dict(view.lineage)), indent=2, ensure_ascii=False)
-        parts.append(f'<dt>資料血緣</dt><dd><pre>{escape_html(lineage_json)}</pre></dd>')
-        parts.append(f'<dt>評估編號</dt><dd><code>{escape_html(view.assessment_id)}</code></dd>')
-        parts.append(f'<dt>評估版本</dt><dd>{escape_html(view.assessment_version)}</dd>')
+            parts.append(f'<div><dt>原始網址</dt><dd><a href="{escape_html(view.source_url)}" rel="noopener noreferrer">開啟來源 ↗</a></dd></div>')
+        parts.append(f'<div><dt>取得時間</dt><dd>{escape_html(view.fetched_at)}</dd></div>')
+        parts.append(f'<div><dt>驗證狀態</dt><dd>第 {view.assessment_sequence} 次評估完成</dd></div>')
+        parts.append(f'<div><dt>評估版本</dt><dd>{escape_html(view.assessment_version)}</dd></div>')
+        parts.append('</dl>')
+        parts.append('<div class="details"><strong class="helper">相關主張</strong><div>')
         if view.related_claims:
-            parts.append('<dt>相關主張</dt><dd><ul>')
             for claim in view.related_claims:
                 claim_id = str(claim.get("claim_id", ""))
-                stance = display_code(claim.get("stance", ""))
-                parts.append(f'<li><code>{escape_html(claim_id)}</code>（{escape_html(stance)}）</li>')
-            parts.append('</ul></dd>')
-        parts.append('</dl></article>')
-    parts.append('</div>')
+                raw_stance = str(claim.get("stance", "context"))
+                stance = display_code(raw_stance)
+                parts.append(f'<span class="stance-pill {escape_html(raw_stance)}">{escape_html(stance)}・{escape_html(claim_id)}</span> ')
+        parts.append('</div></div>')
+        parts.append('<details class="details"><summary>查看技術追溯資訊</summary><dl class="evidence-meta">')
+        parts.append(f'<div><dt>標準化網址</dt><dd>{escape_html(view.canonical_url)}</dd></div>')
+        parts.append(f'<div><dt>引用內容</dt><dd>{escape_html(view.quote)}</dd></div>')
+        parts.append(f'<div><dt>內容雜湊</dt><dd><code>{escape_html(view.content_hash)}</code></dd></div>')
+        parts.append(f'<div><dt>評估編號</dt><dd><code>{escape_html(view.assessment_id)}</code></dd></div>')
+        lineage_json = json.dumps(sanitize_value(dict(view.lineage)), indent=2, ensure_ascii=False)
+        parts.append(f'<div style="grid-column:1/-1"><dt>資料血緣</dt><dd><pre>{escape_html(lineage_json)}</pre></dd></div>')
+        parts.append('</dl></details></article>')
+    parts.append('</div></div>')
     return "\n".join(parts)
 
 
 def render_report_html(view: DemoReportView) -> str:
     """Render final report as safe HTML fragment."""
-    parts = ['<div class="final-report">']
-    parts.append('<h1>最終分析報告</h1>')
-    parts.append(f'<p><strong>幣種：</strong> {escape_html(", ".join(view.assets))}</p>')
-    parts.append(f'<p><strong>問題：</strong> {escape_html(view.question)}</p>')
-    parts.append(f'<p><strong>產出狀態：</strong> {escape_html(display_code(view.publication_outcome))}</p>')
+    confidence_cards = (
+        ("整體信心", view.confidence.get("overall")),
+        ("證據品質", view.confidence.get("evidence_quality")),
+        ("交叉一致性", view.confidence.get("consistency")),
+        ("資料覆蓋度", view.confidence.get("coverage")),
+    )
+    parts = [
+        '<div class="chat-layout"><section class="conversation">',
+        '<header class="conversation-header"><div style="display:flex;align-items:center;gap:12px"><span class="agent-avatar">CT</span><div><h1>CryptoTrust 分析助理</h1><p>已完成證據導向分析</p></div></div>',
+        f'<span class="status-pill ok">{escape_html(display_code(view.publication_outcome))}</span></header>',
+        '<div class="message-list"><div><div class="message-meta">你</div><div class="message user"><div class="message-content">',
+        f'<p><strong>問題：</strong> {escape_html(view.question)}</p></div></div></div>',
+        '<div><div class="message-meta">CryptoTrust Agent</div><div class="message agent"><span class="agent-avatar">CT</span><div class="message-content">',
+        '<p><strong>市場判斷</strong></p>',
+        f'<p>{escape_html(view.market_judgment)}</p></div></div></div>',
+        '<article class="panel final-report"><div class="report-intro"><span class="eyebrow">Final report</span><h1>最終分析報告</h1>',
+        f'<p class="helper"><strong>幣種：</strong> {escape_html(", ".join(view.assets))} ・ <strong>產出狀態：</strong> {escape_html(display_code(view.publication_outcome))}</p></div>',
+        '<div class="metric-grid">',
+    ]
+    for label, value in confidence_cards:
+        percent, width = _confidence_percent(value)
+        parts.append(
+            f'<div class="metric-card"><div class="metric-label">{escape_html(label)}</div>'
+            f'<div class="metric-value">{escape_html(percent)}</div><div class="meter" aria-label="{escape_html(label)} {escape_html(percent)}">'
+            f'<span style="width:{width}%"></span></div></div>'
+        )
+    parts.append('</div><p class="confidence-note"><strong>如何解讀：</strong>可信度不是新聞真偽判決，而是根據證據品質、來源間一致程度與資料覆蓋範圍計算的分析信心。</p>')
 
-    parts.append('<h2>市場判斷</h2>')
-    parts.append(f'<p>{escape_html(view.market_judgment)}</p>')
-
-    parts.append('<h2>事實</h2><ul>')
+    parts.append('<section class="report-section"><h2>關鍵事實</h2><ul>')
     for fact in view.facts:
         refs = ", ".join(list(fact.get("evidence_refs", [])) + list(fact.get("analysis_refs", [])))
         parts.append(f'<li>{escape_html(str(fact["statement"]))} <small>[{escape_html(refs)}]</small></li>')
-    parts.append('</ul>')
+    parts.append('</ul></section>')
 
-    parts.append('<h2>推論</h2><ul>')
+    parts.append('<section class="report-section"><h2>推論</h2><ul>')
     for inf in view.inferences:
-        parts.append(f'<li>{escape_html(str(inf["statement"]))}（信心：{escape_html(str(inf["confidence"]))}）[事實：{escape_html(", ".join(inf.get("fact_refs", [])))}]</li>')
-    parts.append('</ul>')
+        inf_confidence, _ = _confidence_percent(inf.get("confidence"))
+        parts.append(f'<li>{escape_html(str(inf["statement"]))} <span class="source-chip">信心 {escape_html(inf_confidence)}</span><br><small>事實：{escape_html(", ".join(inf.get("fact_refs", [])))}</small></li>')
+    parts.append('</ul></section>')
 
-    parts.append('<h2>結論</h2><ul>')
+    parts.append('<section class="report-section"><h2>結論</h2><ul>')
     for con in view.conclusions:
-        parts.append(f'<li>{escape_html(str(con["statement"]))}（信心：{escape_html(str(con["confidence"]))}）</li>')
-    parts.append('</ul>')
+        conclusion_confidence, _ = _confidence_percent(con.get("confidence"))
+        parts.append(f'<li>{escape_html(str(con["statement"]))} <span class="source-chip">信心 {escape_html(conclusion_confidence)}</span></li>')
+    parts.append('</ul></section>')
 
-    parts.append('<h2>矛盾訊號</h2>')
+    parts.append('<section class="report-section"><h2>矛盾訊號</h2>')
     if view.contradictions:
         parts.append('<ul>')
         for cont in view.contradictions:
@@ -413,10 +464,10 @@ def render_report_html(view: DemoReportView) -> str:
         parts.append('</ul>')
     else:
         parts.append('<p>無</p>')
+    parts.append('</section>')
 
-    parts.append(f'<h2>信心說明</h2><pre>{escape_html(json.dumps(dict(view.confidence), indent=2))}</pre>')
-
-    parts.append('<h2>已知限制</h2>')
+    parts.append('<section class="report-section"><h2>信心說明</h2><p>以上數值來自正式 reasoning output 的 confidence components，未由 UI 自行推測。</p></section>')
+    parts.append('<section class="report-section"><h2>已知限制</h2>')
     if view.limitations:
         parts.append('<ul>')
         for lim in view.limitations:
@@ -424,8 +475,9 @@ def render_report_html(view: DemoReportView) -> str:
         parts.append('</ul>')
     else:
         parts.append('<p>無</p>')
+    parts.append('</section>')
 
-    parts.append('<h2>降級狀態</h2>')
+    parts.append('<section class="report-section"><h2>降級狀態</h2>')
     if view.renderer_failures:
         parts.append('<ul>')
         for rf in view.renderer_failures:
@@ -434,11 +486,12 @@ def render_report_html(view: DemoReportView) -> str:
         parts.append('</ul>')
     else:
         parts.append('<p>無</p>')
+    parts.append('</section>')
 
     if view.watchpoints:
-        parts.append('<h2>觀察重點</h2><ul>')
+        parts.append('<section class="report-section"><h2>觀察重點</h2><ul>')
         parts.extend(f'<li>{escape_html(item)}</li>' for item in view.watchpoints)
-        parts.append('</ul>')
+        parts.append('</ul></section>')
 
     disclaimer = (
         "本報告僅供參考，不構成投資建議。"
@@ -446,8 +499,30 @@ def render_report_html(view: DemoReportView) -> str:
         else view.disclaimer
     )
     parts.append(f'<p class="disclaimer">{escape_html(disclaimer)}</p>')
-    parts.append('</div>')
+    parts.append('</article></div></section><aside class="insights-rail"><span class="eyebrow">Traceability</span><h2>證據摘要</h2>')
+    parts.append(f'<div class="metric-card"><div class="metric-label">支持證據</div><div class="metric-value">{len(view.supporting_evidence_ids)}</div></div>')
+    parts.append(f'<div class="metric-card" style="margin-top:10px"><div class="metric-label">反方證據</div><div class="metric-value">{len(view.counter_evidence_ids)}</div></div>')
+    parts.append('<p class="rail-copy">每個事實、推論與結論保留 Evidence ID 或 Analysis ID，可從證據清單回查來源。</p>')
+    status_href = (
+        f'/demo/status?task_id={escape_html(view.task_id)}'
+        f'&amp;execution_id={escape_html(view.execution_id)}'
+    )
+    parts.append(f'<a class="button full" href="{status_href}">返回成果列表</a></aside></div>')
     return "\n".join(parts)
+
+
+def _confidence_percent(value: object) -> tuple[str, str]:
+    """Format a canonical probability for display without inventing precision."""
+    try:
+        probability = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        return "—", "0"
+    if not Decimal("0") <= probability <= Decimal("1"):
+        return "—", "0"
+    percentage = (probability * Decimal("100")).quantize(Decimal("0.1"))
+    display = format(percentage, "f").rstrip("0").rstrip(".")
+    width = format(percentage, "f")
+    return f"{display}%", width
 
 
 def render_log_html(entries: Sequence[DemoLogEntryView]) -> str:
@@ -546,6 +621,11 @@ def build_evidence_document_views(payload: Mapping[str, object]) -> tuple[DemoEv
                 lineage=lineage if isinstance(lineage, Mapping) else {},
                 assessment_id=str(item.get("assessment_id", "")),
                 assessment_version=str(item.get("assessment_version", "")),
+                assessment_sequence=(
+                    item.get("assessment_sequence")
+                    if type(item.get("assessment_sequence")) is int and item.get("assessment_sequence", 0) >= 1
+                    else 1
+                ),
                 related_claims=claims,
             )
         )

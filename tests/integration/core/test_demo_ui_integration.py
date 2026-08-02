@@ -176,8 +176,16 @@ class ArtifactHtmlIntegrationTests(unittest.TestCase):
             "信心說明",
             "已知限制",
             "降級狀態",
+            "整體信心",
+            "證據品質",
+            "交叉一致性",
+            "資料覆蓋度",
+            "可信度不是新聞真偽判決",
         ):
             self.assertIn(label, response.text)
+        self.assertIn("%", response.text)
+        self.assertIn('class="message user"', response.text)
+        self.assertIn('class="message agent"', response.text)
         for narrative in (
             "訊號分歧",
             "中性評估",
@@ -202,6 +210,8 @@ class ArtifactHtmlIntegrationTests(unittest.TestCase):
             "評估編號",
             "評估版本",
             "相關主張",
+            "驗證狀態",
+            "來源已可追溯",
         ):
             self.assertIn(label, response.text)
         self.assertIn("ASSESS-", response.text)

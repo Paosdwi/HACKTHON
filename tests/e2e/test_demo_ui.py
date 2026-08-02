@@ -153,6 +153,10 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         self.assertIn("分析問題", home.text)
         self.assertIn("選擇幣種", home.text)
         self.assertIn("執行正式分析", home.text)
+        self.assertIn('class="chat-layout"', home.text)
+        self.assertIn("CryptoTrust 分析助理", home.text)
+        self.assertIn("證據品質", home.text)
+        self.assertIn("來源可追溯", home.text)
         self.assertIn("本機 fake", home.text)
         self.assertIn("不會連線至 AWS", home.text)
         self.assertIn(
@@ -173,6 +177,8 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         status = self.client.get(submitted.headers["location"])
         self.assertEqual(200, status.status_code)
         self.assertIn("下載最低成果組合", status.text)
+        self.assertIn("分析進度", status.text)
+        self.assertIn("查看完整回答", status.text)
 
 
 class OwnershipAndAuthenticationHttpTests(unittest.TestCase):
