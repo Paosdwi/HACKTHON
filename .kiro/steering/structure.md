@@ -66,7 +66,7 @@
 
 ### Application
 
-擁有 use cases、orchestration、deterministic Planner、preflight/quota/publication workflow、十個 Port 與 boundary DTO。不得依賴 concrete adapter、FastAPI 或 SDK。
+擁有 use cases、orchestration、deterministic Planner、preflight/quota/publication workflow、十一個 Port 與 boundary DTO。不得依賴 concrete adapter、FastAPI 或 SDK。
 
 ### Infrastructure
 
