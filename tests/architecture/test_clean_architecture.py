@@ -72,9 +72,13 @@ class PackageBoundaryTests(unittest.TestCase):
     def test_presentation_only_wires_local_adapters_in_named_composition_root(self) -> None:
         presentation = PACKAGE_ROOT / "presentation"
         composition = presentation / "api" / "demo_ui_composition.py"
+        compositions = {
+            composition,
+            presentation / "api" / "aws_demo_composition.py",
+        }
         violations: list[str] = []
         for source_file in sorted(presentation.rglob("*.py")):
-            if source_file == composition:
+            if source_file in compositions:
                 continue
             for module in sorted(imported_modules(source_file)):
                 if module == "crypto_trust_agent.infrastructure" or module.startswith(

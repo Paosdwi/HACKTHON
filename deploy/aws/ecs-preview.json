@@ -1,6 +1,6 @@
 {
   "AWSTemplateFormatVersion": "2010-09-09",
-  "Description": "CryptoTrust Agent pre-PA73 ECS Fargate deployment foundation. Defaults to zero running tasks and requires an explicit approved ASGI module.",
+  "Description": "CryptoTrust Agent public hackathon demo on ECS Fargate with Bedrock Claude.",
   "Parameters": {
     "ProjectName": {
       "Type": "String",
@@ -25,7 +25,8 @@
     },
     "AsgiAppModule": {
       "Type": "String",
-      "Description": "Approved production ASGI import path, for example package.module:app. Never use the local fake Demo module in production.",
+      "Default": "crypto_trust_agent.presentation.api.aws_demo_api:app",
+      "Description": "ASGI import path for the public AWS demo.",
       "AllowedPattern": "^[A-Za-z_][A-Za-z0-9_.]*:[A-Za-z_][A-Za-z0-9_]*$"
     },
     "DesiredCount": {
@@ -64,10 +65,10 @@
       "Default": "",
       "Description": "Optional Secrets Manager ARN containing a JSON secret with pseudonym_key."
     },
-    "BedrockModelArn": {
+    "BedrockModelId": {
       "Type": "String",
-      "Default": "",
-      "Description": "Approved Bedrock model or inference-profile ARN. Leave empty until PA73 is merged and reviewed."
+      "Default": "us.anthropic.claude-opus-4-8",
+      "Description": "Bedrock Converse model or cross-Region inference profile ID."
     }
   },
   "Conditions": {
@@ -77,8 +78,7 @@
         {"Fn::Not": [{"Fn::Equals": [{"Ref": "PublicHostname"}, ""]}]}
       ]
     },
-    "HasRuntimeSecret": {"Fn::Not": [{"Fn::Equals": [{"Ref": "RuntimeSecretArn"}, ""]}]},
-    "HasBedrockModel": {"Fn::Not": [{"Fn::Equals": [{"Ref": "BedrockModelArn"}, ""]}]}
+    "HasRuntimeSecret": {"Fn::Not": [{"Fn::Equals": [{"Ref": "RuntimeSecretArn"}, ""]}]}
   },
   "Resources": {
     "ContainerRepository": {
@@ -263,16 +263,10 @@
                 ]
               },
               {
-                "Fn::If": [
-                  "HasBedrockModel",
-                  {
-                    "Sid": "ApprovedBedrockModel",
-                    "Effect": "Allow",
-                    "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
-                    "Resource": {"Ref": "BedrockModelArn"}
-                  },
-                  {"Ref": "AWS::NoValue"}
-                ]
+                "Sid": "HackathonBedrockClaude",
+                "Effect": "Allow",
+                "Action": ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"],
+                "Resource": "*"
               }
             ]
           }
@@ -418,6 +412,7 @@
             {"Name": "CRYPTOTRUST_ALLOW_LOCAL_FAKE", "Value": "0"},
             {"Name": "CRYPTOTRUST_ASGI_APP", "Value": {"Ref": "AsgiAppModule"}},
             {"Name": "AWS_REGION", "Value": {"Ref": "AWS::Region"}},
+            {"Name": "CRYPTOTRUST_BEDROCK_MODEL_ID", "Value": {"Ref": "BedrockModelId"}},
             {"Name": "CRYPTOTRUST_ARTIFACT_BUCKET", "Value": {"Ref": "ArtifactBucket"}},
             {"Name": "CRYPTOTRUST_FORMAL_RUN_QUEUE_URL", "Value": {"Ref": "FormalRunQueue"}},
             {"Name": "CRYPTOTRUST_COGNITO_USER_POOL_ID", "Value": {"Ref": "UserPool"}},

@@ -10,7 +10,7 @@ WORKDIR /app
 RUN addgroup --system --gid 10001 cryptotrust \
     && adduser --system --uid 10001 --ingroup cryptotrust --home /nonexistent cryptotrust \
     && pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir fastapi==0.115.14 uvicorn==0.34.3
+    && pip install --no-cache-dir fastapi==0.115.14 uvicorn==0.34.3 boto3==1.43.51
 
 COPY --chown=cryptotrust:cryptotrust src ./src
 
@@ -23,4 +23,3 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 # CRYPTOTRUST_ASGI_APP is intentionally required.  The deployment must not
 # silently boot the local fake Demo composition as a production service.
 CMD ["/bin/sh", "-c", ": \"${CRYPTOTRUST_ASGI_APP:?set CRYPTOTRUST_ASGI_APP to the approved production ASGI module}\"; exec python -B -m uvicorn \"${CRYPTOTRUST_ASGI_APP}\" --host 0.0.0.0 --port \"${PORT}\" --workers 1 --proxy-headers --forwarded-allow-ips='*'"]
-

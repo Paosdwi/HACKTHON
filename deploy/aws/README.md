@@ -1,51 +1,20 @@
-# CryptoTrust Agent AWS deployment foundation
+# CryptoTrust Agent — fastest AWS demo deployment
 
-The current target is an ECS Fargate web/API container behind an Application
-Load Balancer, with SQS reserved for asynchronous Formal Runs and S3 for
-artifacts.  API Gateway or a Lambda BFF may later submit jobs, but it must not
-hold a request open for the 900-second workflow.
+This path deploys one public ECS Fargate task behind an Application Load
+Balancer. The task uses its IAM role to call Bedrock Claude, reads public
+Binance daily OHLCV and public Google News RSS, and serves the existing Demo UI.
 
-The template creates resources only when you explicitly run CloudFormation.
-Nothing in this directory automatically writes to AWS.
+It is intentionally a hackathon demo: one task, in-memory run/artifact state,
+no sign-in screen, and synchronous submission. Do not present it as the final
+high-availability production architecture.
 
-## Why the run is asynchronous
+Nothing runs until these commands are executed. Never commit workshop access
+keys; run with the workshop role or CloudShell session.
 
-API Gateway REST integrations normally have a short integration timeout, while
-the CryptoTrust Formal Run has a 900-second hard deadline.  The production flow
-therefore needs to be:
-
-1. UI/API validates the Cognito JWT and request.
-2. API returns `task_id` quickly and queues the Formal Run.
-3. Step Functions/ECS Fargate executes the bounded workflow.
-4. UI polls status and downloads the artifact bundle after publication.
-
-AWS references:
-
-- <https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-execution-service-limits-table.html>
-- <https://docs.aws.amazon.com/step-functions/latest/dg/connect-ecs.html>
-- <https://docs.aws.amazon.com/AmazonECS/latest/developerguide/working-with-templates.html>
-- <https://docs.aws.amazon.com/elasticloadbalancing/latest/application/edit-load-balancer-attributes.html>
-
-## Prerequisites
-
-- An AWS hackathon role allowed to create CloudFormation, IAM, ECR, ECS,
-  Elastic Load Balancing, EC2 security groups, S3, SQS, Cognito and CloudWatch.
-- Two public subnets in different Availability Zones in an existing VPC.
-- Docker and AWS CLI, or AWS CloudShell with a container build environment.
-- PA73/PA74 and the production composition gates in
-  [DEPLOYMENT_READINESS.md](DEPLOYMENT_READINESS.md) completed before starting
-  the service.
-
-Do not store workshop access keys in `.env`, Git, Docker build arguments or
-CloudFormation parameters.  Prefer the workshop-provided role/session.
-
-## Stage 1: create the foundation with zero tasks
-
-Use a syntactically valid future production module while `DesiredCount=0`.
-No container starts at this stage.
+## 1. Create the stack with zero running tasks
 
 ```powershell
-$region = "REPLACE_REGION"
+$region = "us-west-2"
 $vpcId = "vpc-REPLACE"
 $subnets = "subnet-REPLACE-A,subnet-REPLACE-B"
 
@@ -54,16 +23,8 @@ aws cloudformation deploy `
   --stack-name cryptotrust-hackathon `
   --template-file deploy/aws/ecs-preview.json `
   --capabilities CAPABILITY_NAMED_IAM `
-  --parameter-overrides `
-    VpcId=$vpcId `
-    PublicSubnetIds=$subnets `
-    AsgiAppModule=crypto_trust_agent.presentation.api.production_composition:app `
-    DesiredCount=0
-```
+  --parameter-overrides VpcId=$vpcId PublicSubnetIds=$subnets DesiredCount=0
 
-Get the newly created ECR URI:
-
-```powershell
 $repositoryUri = aws cloudformation describe-stacks `
   --region $region `
   --stack-name cryptotrust-hackathon `
@@ -71,9 +32,7 @@ $repositoryUri = aws cloudformation describe-stacks `
   --output text
 ```
 
-## Stage 2: build and push after PA73/PA74
-
-Use the Git commit as an immutable image tag.  Do not use `latest`.
+## 2. Build and push the image
 
 ```powershell
 $imageTag = git rev-parse --short=12 HEAD
@@ -86,11 +45,7 @@ docker build --pull --tag "${repositoryUri}:${imageTag}" .
 docker push "${repositoryUri}:${imageTag}"
 ```
 
-## Stage 3: start one reviewed task
-
-The ASGI module below must exist and must be the reviewed production
-composition.  Pass exact Secrets Manager and Bedrock ARNs only after PA73/PA74
-review.
+## 3. Start the public demo
 
 ```powershell
 aws cloudformation deploy `
@@ -102,19 +57,27 @@ aws cloudformation deploy `
     VpcId=$vpcId `
     PublicSubnetIds=$subnets `
     ImageTag=$imageTag `
-    AsgiAppModule=crypto_trust_agent.presentation.api.production_composition:app `
-    RuntimeSecretArn=REPLACE_SECRET_ARN `
-    BedrockModelArn=REPLACE_APPROVED_MODEL_ARN `
+    BedrockModelId=us.anthropic.claude-opus-4-8 `
     DesiredCount=1
 ```
 
-Read `PreviewUrl` from the stack outputs.  If no ACM certificate and matching
-DNS hostname are configured, the URL is HTTP-only and may be used only for a
-non-credentialed preview.
+Read the public URL:
 
-## Stop compute after a rehearsal
+```powershell
+aws cloudformation describe-stacks `
+  --region $region `
+  --stack-name cryptotrust-hackathon `
+  --query "Stacks[0].Outputs[?OutputKey=='PreviewUrl'].OutputValue" `
+  --output text
+```
 
-Update the same stack with `DesiredCount=0`.  This stops Fargate tasks while
-retaining the reviewed foundation, ECR images, artifacts and logs.  Delete the
-stack only when the team is ready to remove the non-retained resources.
+If Claude access is denied in the workshop account, open the Bedrock model
+catalog once, confirm Anthropic access/use-case details, and redeploy without
+changing source code. AWS documents the model and inference profile IDs here:
+<https://docs.aws.amazon.com/bedrock/latest/userguide/model-card-anthropic-claude-opus-4-8.html>.
 
+## Stop charges after the demo
+
+Redeploy the same stack with `DesiredCount=0`. The ALB and retained resources
+can still cost money; delete the stack after the event when retained data is no
+longer needed.

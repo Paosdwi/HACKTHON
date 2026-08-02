@@ -4,7 +4,7 @@
   {"ParameterKey": "VpcId", "ParameterValue": "vpc-REPLACE"},
   {"ParameterKey": "PublicSubnetIds", "ParameterValue": "subnet-REPLACE-A,subnet-REPLACE-B"},
   {"ParameterKey": "ImageTag", "ParameterValue": "bootstrap-not-pushed"},
-  {"ParameterKey": "AsgiAppModule", "ParameterValue": "crypto_trust_agent.presentation.api.production_composition:app"},
+  {"ParameterKey": "AsgiAppModule", "ParameterValue": "crypto_trust_agent.presentation.api.aws_demo_api:app"},
   {"ParameterKey": "DesiredCount", "ParameterValue": "0"},
   {"ParameterKey": "TaskCpu", "ParameterValue": "1024"},
   {"ParameterKey": "TaskMemory", "ParameterValue": "2048"},
@@ -12,6 +12,5 @@
   {"ParameterKey": "CertificateArn", "ParameterValue": ""},
   {"ParameterKey": "PublicHostname", "ParameterValue": ""},
   {"ParameterKey": "RuntimeSecretArn", "ParameterValue": ""},
-  {"ParameterKey": "BedrockModelArn", "ParameterValue": ""}
+  {"ParameterKey": "BedrockModelId", "ParameterValue": "us.anthropic.claude-opus-4-8"}
 ]
-

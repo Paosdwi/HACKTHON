@@ -21,10 +21,13 @@ class DeploymentScaffoldTests(unittest.TestCase):
         cls.resources = cls.template["Resources"]
         cls.dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
 
-    def test_foundation_defaults_to_zero_tasks_and_requires_explicit_asgi_module(self) -> None:
+    def test_foundation_defaults_to_zero_tasks_and_uses_explicit_aws_demo_module(self) -> None:
         parameters = self.template["Parameters"]
         self.assertEqual(0, parameters["DesiredCount"]["Default"])
-        self.assertNotIn("Default", parameters["AsgiAppModule"])
+        self.assertEqual(
+            "crypto_trust_agent.presentation.api.aws_demo_api:app",
+            parameters["AsgiAppModule"]["Default"],
+        )
         self.assertNotIn("demo_ui_api", self.template_text)
         self.assertIn("CRYPTOTRUST_ASGI_APP", self.dockerfile)
         self.assertIn(":?set CRYPTOTRUST_ASGI_APP", self.dockerfile)
@@ -49,9 +52,12 @@ class DeploymentScaffoldTests(unittest.TestCase):
         self.assertGreaterEqual(int(idle), 900)
         self.assertLessEqual(int(idle), 4000)
 
-    def test_no_secret_account_bucket_endpoint_or_model_is_hardcoded(self) -> None:
+    def test_no_secret_account_bucket_or_endpoint_is_hardcoded(self) -> None:
         self.assertEqual("", self.template["Parameters"]["RuntimeSecretArn"]["Default"])
-        self.assertEqual("", self.template["Parameters"]["BedrockModelArn"]["Default"])
+        self.assertEqual(
+            "us.anthropic.claude-opus-4-8",
+            self.template["Parameters"]["BedrockModelId"]["Default"],
+        )
         self.assertNotRegex(self.template_text, re.compile(r"\b\d{12}\b"))
         for forbidden in ("AKIA", "aws_secret_access_key", "password=", "api_key="):
             self.assertNotIn(forbidden, self.template_text.casefold())
@@ -67,4 +73,3 @@ class DeploymentScaffoldTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
