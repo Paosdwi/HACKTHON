@@ -97,11 +97,11 @@ class AwsDemoFormalRunStepExecutor:
             result = self._reason(request)
         else:
             result = self._delegate.execute(request)
-        _LOGGER.info(
+        _LOGGER.warning(
             "aws_demo_step step=%s outcome=%s reason_code=%s",
             request.step.value,
             result.outcome.value,
-            result.reason_code or "none",
+            result.safe_reason_code or "none",
         )
         return result
 
@@ -342,4 +342,3 @@ class AwsDemoFormalRunStepExecutor:
 
 __all__ = ("AwsDemoFormalRunStepExecutor",)
 _LOGGER = logging.getLogger(__name__)
-
