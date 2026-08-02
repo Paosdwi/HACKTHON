@@ -464,6 +464,42 @@ class ProviderBoundaryTests(unittest.TestCase):
             self.assertEqual({}, dict(result.error.details))
             self.assertNotIn("secret", repr(result.to_wire()).lower())
 
+    def test_trusted_roles_propagate_and_repair_is_always_primary(self) -> None:
+        adapter, invoker = make_adapter()
+        adapter.generate(generate_request("OP-PA73-ROLE-PRIMARY", model_role="primary"))
+        adapter.generate(generate_request("OP-PA73-ROLE-FALLBACK", model_role="fallback"))
+        self.assertEqual(["primary", "fallback"], [
+            call["model_role"] for call in invoker.calls
+        ])
+        for call in invoker.calls:
+            request = json.loads(call["body"])["request"]
+            self.assertNotIn("model_role", request)
+            self.assertNotIn("operation_id", request)
+
+        auth_operation = "OP-PA73-ROLE-AUTH"
+        invoker.configure(auth_operation, provider_payload(invalid_result()))
+        generated_request = generate_request(auth_operation)
+        original = adapter.generate(generated_request)
+        self.assertIsInstance(original, ReasoningResultDTO)
+        repair = replace(
+            repair_request("OP-PA73-ROLE-REPAIR"),
+            context_hash=generated_request.context_hash,
+            original_result=original,
+            validator_errors=original.validation_diagnostics,
+        )
+        adapter.repair(repair)
+        self.assertEqual("primary", invoker.calls[-1]["model_role"])
+
+        for role in ("primary", "fallback"):
+            operation = f"OP-PA73-ROLE-HEALTH-{role.upper()}"
+            request = ReasoningHealthCheckRequestDTO(
+                operation,
+                role,
+                deadline(operation, seconds=3, at="2026-08-01T02:00:03Z"),
+            )
+            self.assertEqual("healthy", adapter.health_check(request).status)
+        self.assertEqual(["primary", "fallback"], invoker.probe_calls)
+
 
 class RepairAuthorizationCacheTests(unittest.TestCase):
     @staticmethod
@@ -794,13 +830,19 @@ class RepairAuthorizationCacheTests(unittest.TestCase):
         release = threading.Event()
 
         class BlockingInvoker(RecordingReasoningInvoker):
-            def invoke(self, *, body: bytes, timeout_ms: int, cancelled):
-                operation = json.loads(body)["request"].get("operation_id")
-                if operation == "OP-PA73-REPAIR-RACE":
+            def invoke(
+                self, *, operation_id, model_role, body: bytes, timeout_ms: int,
+                cancelled,
+            ):
+                if operation_id == "OP-PA73-REPAIR-RACE":
                     entered.set()
                     release.wait(1)
                 return super().invoke(
-                    body=body, timeout_ms=timeout_ms, cancelled=cancelled
+                    operation_id=operation_id,
+                    model_role=model_role,
+                    body=body,
+                    timeout_ms=timeout_ms,
+                    cancelled=cancelled,
                 )
 
         invoker = BlockingInvoker()
@@ -820,8 +862,7 @@ class RepairAuthorizationCacheTests(unittest.TestCase):
         first.join(1)
         repair_calls = [
             call for call in invoker.calls
-            if json.loads(call["body"])["request"].get("operation_id")
-            == "OP-PA73-REPAIR-RACE"
+            if call["operation_id"] == "OP-PA73-REPAIR-RACE"
         ]
         self.assertEqual(1, len(repair_calls))
         self.assertIn("reasoning_schema_invalid", {

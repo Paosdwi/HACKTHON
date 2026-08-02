@@ -1,0 +1,31 @@
+{
+  "synthetic_non_production_fixture": true,
+  "reasoning_context": {
+    "schema_version": "1.0.0",
+    "question": "Summarize the bounded synthetic CryptoTrust context without making a market conclusion.",
+    "evidence_refs": [
+      {
+        "evidence_id": "EVID-PA73-LIVE-001",
+        "assessment_id": "ASSESS-PA73-LIVE-001",
+        "excerpt": "Synthetic CryptoTrust records indicate that the sample dataset is internally consistent.",
+        "stance": "context",
+        "confidence": "0.8"
+      }
+    ],
+    "analysis_refs": [
+      {
+        "analysis_id": "ANALYSIS-PA73-LIVE-001",
+        "analysis_version": "1.0.0",
+        "summary": "Synthetic analysis notes that the bounded sample is suitable only for non-production validation.",
+        "source_refs": [
+          "EVID-PA73-LIVE-001"
+        ]
+      }
+    ],
+    "contradictions": [],
+    "limitations": [
+      "Synthetic non-production context only."
+    ],
+    "omissions": []
+  }
+}

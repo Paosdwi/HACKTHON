@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 from threading import RLock
-from typing import Literal, Protocol
+from typing import Literal, Protocol, cast
 
 from crypto_trust_agent.application.dto.common import (
     DeadlineExceededError,
@@ -70,6 +70,7 @@ _RETRYABLE_CODES = frozenset({
     "model_unavailable",
     "fallback_unavailable",
 })
+ModelRole = Literal["primary", "fallback"]
 
 
 class ReasoningClient(Protocol):
@@ -78,11 +79,22 @@ class ReasoningClient(Protocol):
     hidden_retries: int
 
     def invoke(
-        self, *, operation_id: str, body: bytes, timeout_ms: int,
+        self,
+        *,
+        operation_id: str,
+        model_role: ModelRole,
+        body: bytes,
+        timeout_ms: int,
         cancelled: Callable[[], bool],
     ) -> bytes | str: ...
 
-    def probe(self, *, timeout_ms: int, cancelled: Callable[[], bool]) -> bool: ...
+    def probe(
+        self,
+        *,
+        model_role: ModelRole,
+        timeout_ms: int,
+        cancelled: Callable[[], bool],
+    ) -> bool: ...
 
 
 class ReasoningClock(Protocol):
@@ -510,7 +522,6 @@ class BedrockReasoningProvider:
         envelope = {
             "schema_version": CONTRACT_VERSION,
             "operation": "generate",
-            "model_role": request.model_role,
             "output_schema_version": request.output_schema_version,
             "guardrail_policy_version": request.guardrail_policy_version,
             "untrusted_context_envelope": request.context.to_wire(),
@@ -663,7 +674,7 @@ class BedrockReasoningProvider:
     def _invoke(
         self,
         operation_id: str,
-        role: str,
+        role: ModelRole,
         context: ReasoningContextDTO,
         body: bytes,
         deadline: LocalDeadline,
@@ -679,6 +690,7 @@ class BedrockReasoningProvider:
             started_at = self._now(operation_id)
             raw = self._client.invoke(
                 operation_id=operation_id,
+                model_role=role,
                 body=body,
                 timeout_ms=min(60_000, deadline.effective_timeout_ms),
                 cancelled=self._cancelled,
@@ -747,7 +759,7 @@ class BedrockReasoningProvider:
                 raise TimeoutError
             result = self._invoke(
                 operation_id,
-                request.model_role,
+                cast(ModelRole, request.model_role),
                 request.context,
                 self._payload_generate(request),
                 deadline,
@@ -849,6 +861,7 @@ class BedrockReasoningProvider:
             if self._late(operation_id, deadline):
                 raise TimeoutError
             healthy = self._client.probe(
+                model_role=cast(ModelRole, request.model_role),
                 timeout_ms=min(3_000, deadline.effective_timeout_ms),
                 cancelled=self._cancelled,
             )
@@ -886,6 +899,7 @@ __all__ = (
     "SYSTEM_INSTRUCTION",
     "BedrockReasoningProvider",
     "EventSink",
+    "ModelRole",
     "NullEventSink",
     "ProviderFailure",
     "ReasoningClient",
