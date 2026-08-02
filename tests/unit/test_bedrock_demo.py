@@ -65,6 +65,31 @@ class DemoBedrockTests(unittest.TestCase):
         self.assertNotIn("guardrailConfig", runtime.calls[0])
         self.assertEqual([], json.loads(result)["facts"])
 
+    def test_ungrounded_claims_are_removed_before_core_validation(self) -> None:
+        payload = {
+            "facts": [
+                {"fact_id": "FACT-1", "statement": "grounded", "evidence_refs": ["EVID-1", "EVID-FAKE"], "analysis_refs": []},
+                {"fact_id": "FACT-2", "statement": "ungrounded", "evidence_refs": ["EVID-FAKE"], "analysis_refs": []},
+            ],
+            "inferences": [
+                {"inference_id": "INFER-1", "statement": "kept", "fact_refs": ["FACT-1", "FACT-2"], "confidence": "0.5"},
+            ],
+            "conclusions": [
+                {"conclusion_id": "CONCL-1", "statement": "kept", "fact_refs": ["FACT-1", "FACT-2"], "inference_refs": ["INFER-1"], "confidence": "0.5"},
+            ],
+            "limitations": [],
+            "watchpoints": [],
+            "confidence_components": {"evidence_quality": "0.5", "consistency": "0.5", "coverage": "0.5", "overall": "0.5"},
+        }
+        grounded = json.loads(DemoBedrockReasoningClient._drop_ungrounded_claims(
+            json.dumps(payload).encode(),
+            allowed_evidence={"EVID-1"},
+            allowed_analysis=set(),
+        ))
+        self.assertEqual(["FACT-1"], [item["fact_id"] for item in grounded["facts"]])
+        self.assertEqual(["FACT-1"], grounded["inferences"][0]["fact_refs"])
+        self.assertEqual(["FACT-1"], grounded["conclusions"][0]["fact_refs"])
+
 
 if __name__ == "__main__":
     unittest.main()

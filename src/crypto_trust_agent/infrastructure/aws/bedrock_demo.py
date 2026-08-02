@@ -170,6 +170,83 @@ class DemoBedrockReasoningClient:
         except Exception:
             raise DemoBedrockError("Bedrock response is invalid") from None
 
+    @staticmethod
+    def _drop_ungrounded_claims(
+        raw: bytes,
+        *,
+        allowed_evidence: set[str],
+        allowed_analysis: set[str],
+    ) -> bytes:
+        """Remove model claims whose citations are outside the supplied context."""
+        try:
+            value = json.loads(raw.decode("utf-8"))
+            if not isinstance(value, dict):
+                return raw
+            facts = value.get("facts")
+            inferences = value.get("inferences")
+            conclusions = value.get("conclusions")
+            if not isinstance(facts, list) or not isinstance(inferences, list) or not isinstance(conclusions, list):
+                return raw
+
+            grounded_facts = []
+            for item in facts:
+                if not isinstance(item, dict):
+                    continue
+                evidence = item.get("evidence_refs")
+                analyses = item.get("analysis_refs")
+                if not isinstance(evidence, list) or not isinstance(analyses, list):
+                    continue
+                item["evidence_refs"] = list(dict.fromkeys(
+                    ref for ref in evidence if isinstance(ref, str) and ref in allowed_evidence
+                ))
+                item["analysis_refs"] = list(dict.fromkeys(
+                    ref for ref in analyses if isinstance(ref, str) and ref in allowed_analysis
+                ))
+                if item["evidence_refs"] or item["analysis_refs"]:
+                    grounded_facts.append(item)
+            fact_ids = {
+                item.get("fact_id") for item in grounded_facts
+                if isinstance(item.get("fact_id"), str)
+            }
+
+            grounded_inferences = []
+            for item in inferences:
+                if not isinstance(item, dict) or not isinstance(item.get("fact_refs"), list):
+                    continue
+                item["fact_refs"] = list(dict.fromkeys(
+                    ref for ref in item["fact_refs"] if isinstance(ref, str) and ref in fact_ids
+                ))
+                if item["fact_refs"]:
+                    grounded_inferences.append(item)
+            inference_ids = {
+                item.get("inference_id") for item in grounded_inferences
+                if isinstance(item.get("inference_id"), str)
+            }
+
+            grounded_conclusions = []
+            for item in conclusions:
+                if not isinstance(item, dict):
+                    continue
+                fact_refs = item.get("fact_refs")
+                inference_refs = item.get("inference_refs")
+                if not isinstance(fact_refs, list) or not isinstance(inference_refs, list):
+                    continue
+                item["fact_refs"] = list(dict.fromkeys(
+                    ref for ref in fact_refs if isinstance(ref, str) and ref in fact_ids
+                ))
+                item["inference_refs"] = list(dict.fromkeys(
+                    ref for ref in inference_refs if isinstance(ref, str) and ref in inference_ids
+                ))
+                if item["fact_refs"] or item["inference_refs"]:
+                    grounded_conclusions.append(item)
+
+            value["facts"] = grounded_facts
+            value["inferences"] = grounded_inferences
+            value["conclusions"] = grounded_conclusions
+            return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        except Exception:
+            return raw
+
     def invoke(
         self,
         *,
@@ -183,6 +260,18 @@ class DemoBedrockReasoningClient:
         if cancelled() or timeout_ms <= 0:
             raise TimeoutError("Bedrock request cancelled")
         request_text = self._request_text(body)
+        request_value = json.loads(request_text)
+        context = request_value.get("untrusted_context_envelope", {})
+        evidence_items = context.get("evidence_refs", []) if isinstance(context, dict) else []
+        analysis_items = context.get("analysis_refs", []) if isinstance(context, dict) else []
+        allowed_evidence = {
+            item.get("evidence_id") for item in evidence_items
+            if isinstance(item, dict) and isinstance(item.get("evidence_id"), str)
+        }
+        allowed_analysis = {
+            item.get("analysis_id") for item in analysis_items
+            if isinstance(item, dict) and isinstance(item.get("analysis_id"), str)
+        }
         client = self._client(timeout_ms)
         converse = getattr(client, "converse", None)
         if not callable(converse):
@@ -203,7 +292,11 @@ class DemoBedrockReasoningClient:
             raise ProviderFailure("model_unavailable", retryable=True) from None
         if cancelled():
             raise TimeoutError("Bedrock response arrived after cancellation")
-        return self._response_text(response)
+        return self._drop_ungrounded_claims(
+            self._response_text(response),
+            allowed_evidence=allowed_evidence,
+            allowed_analysis=allowed_analysis,
+        )
 
     def probe(
         self,
