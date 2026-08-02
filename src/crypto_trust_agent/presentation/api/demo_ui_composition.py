@@ -97,7 +97,7 @@ class LocalDemoComposition:
 def classify_demo_question(question: str, assets: tuple[str, ...]) -> QuestionType:
     """Deterministic local classifier; it never calls a model or provider."""
 
-    if len(assets) == 2:
+    if len(assets) >= 2:
         return QuestionType.ASSET_COMPARISON
     normalized = question.casefold()
     if normalized.startswith("validate") or "hypothesis" in normalized:

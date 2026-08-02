@@ -61,7 +61,7 @@ class AuditSink:
 
 
 def classify(question: str, assets: tuple[str, ...]) -> QuestionType:
-    if question.startswith("Compare") and len(assets) == 2:
+    if question.startswith("Compare") and len(assets) >= 2:
         return QuestionType.ASSET_COMPARISON
     if question.startswith("Validate") and len(assets) == 1:
         return QuestionType.HYPOTHESIS_VALIDATION
@@ -200,6 +200,10 @@ class CreateTaskUseCaseTests(unittest.TestCase):
             command(question="Status of BTC", assets=("BTC",)),
             command(question="Validate BTC thesis", assets=("BTC",)),
             command(question="Compare ETH and BTC", assets=("ETH", "BTC")),
+            command(
+                question="Compare all supported assets",
+                assets=("BTC", "ETH", "SOL", "BNB", "XRP"),
+            ),
         )
         for index, item in enumerate(requests):
             with self.subTest(item=item):

@@ -234,8 +234,13 @@ class CreateTaskUseCase:
                     fingerprint.assets_requested_order,
                 )
             )
-            expected_assets = 2 if question_type is QuestionType.ASSET_COMPARISON else 1
-            if len(fingerprint.assets_requested_order) != expected_assets:
+            asset_count = len(fingerprint.assets_requested_order)
+            valid_asset_count = (
+                2 <= asset_count <= 5
+                if question_type is QuestionType.ASSET_COMPARISON
+                else asset_count == 1
+            )
+            if not valid_asset_count:
                 raise CreateTaskValidationError("question type asset count mismatch")
         except (FingerprintValidationError, TypeError, ValueError) as error:
             if isinstance(error, CreateTaskValidationError):

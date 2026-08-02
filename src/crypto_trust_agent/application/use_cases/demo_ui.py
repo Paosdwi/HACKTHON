@@ -547,7 +547,7 @@ class DemoUseCase:
         if not isinstance(assets, Sequence) or isinstance(assets, (str, bytes)) or not assets:
             raise DemoUseCaseError("validation_error")
         normalized = tuple(assets)
-        if len(normalized) > 2 or len(set(normalized)) != len(normalized):
+        if len(normalized) > len(SUPPORTED_ASSETS) or len(set(normalized)) != len(normalized):
             raise DemoUseCaseError("validation_error")
         for asset in normalized:
             if not isinstance(asset, str) or not _ASSET_PATTERN.fullmatch(asset):

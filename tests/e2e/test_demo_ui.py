@@ -171,7 +171,10 @@ class FullLocalHttpFlowTests(unittest.TestCase):
 
         submitted = self.client.post(
             "/demo/submit",
-            data=submission("請分析 ETH 目前的市場狀況，列出關鍵證據、信心與已知限制。", ["ETH"]),
+            data=submission(
+                "請比較所有指定幣種的市場訊號、風險與已知限制。",
+                ["BTC", "ETH", "SOL", "BNB", "XRP"],
+            ),
             follow_redirects=False,
         )
         self.assertEqual(303, submitted.status_code, submitted.text)
