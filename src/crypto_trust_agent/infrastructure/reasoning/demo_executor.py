@@ -325,6 +325,13 @@ class AwsDemoFormalRunStepExecutor:
         ))
         events = self._delegate_events(request)
         if not isinstance(result, ReasoningResultDTO) or result.outcome != "valid":
+            if isinstance(result, ErrorResultDTO):
+                safe_code = result.error.code
+            elif isinstance(result, ReasoningResultDTO):
+                safe_code = ",".join(item.code for item in result.validation_diagnostics) or result.outcome
+            else:
+                safe_code = "invalid_result_type"
+            _LOGGER.warning("aws_demo_reasoning_rejected safe_code=%s", safe_code)
             return FormalRunStepResult(
                 StepOutcome.FAILURE,
                 "reasoning_provider_unavailable",
