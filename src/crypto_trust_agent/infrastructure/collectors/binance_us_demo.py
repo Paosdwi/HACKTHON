@@ -85,7 +85,6 @@ class BinanceUsDemoMarketCollector:
             "interval": "1d",
             "startTime": int(datetime.combine(start, day_time.min, tzinfo=UTC).timestamp() * 1000),
             "endTime": int(datetime.combine(end, day_time.min, tzinfo=UTC).timestamp() * 1000) + _DAY_MS - 1,
-            "timeZone": "0",
             "limit": 1000,
         })
         url = f"{BASE_URL}/api/v3/klines?{query}"
