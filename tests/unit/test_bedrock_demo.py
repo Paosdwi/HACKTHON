@@ -86,9 +86,11 @@ class DemoBedrockTests(unittest.TestCase):
             allowed_evidence={"EVID-1"},
             allowed_analysis=set(),
         ))
-        self.assertEqual(["FACT-1"], [item["fact_id"] for item in grounded["facts"]])
-        self.assertEqual(["FACT-1"], grounded["inferences"][0]["fact_refs"])
-        self.assertEqual(["FACT-1"], grounded["conclusions"][0]["fact_refs"])
+        self.assertEqual(["FACT-001"], [item["fact_id"] for item in grounded["facts"]])
+        self.assertEqual(["FACT-001"], grounded["inferences"][0]["fact_refs"])
+        self.assertEqual(["FACT-001"], grounded["conclusions"][0]["fact_refs"])
+        self.assertEqual("INFER-001", grounded["inferences"][0]["inference_id"])
+        self.assertEqual("CONCL-001", grounded["conclusions"][0]["conclusion_id"])
 
 
 if __name__ == "__main__":

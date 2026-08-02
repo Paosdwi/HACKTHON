@@ -14,6 +14,7 @@ import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 
 from crypto_trust_agent.infrastructure.reasoning.adapter import (
     MAX_RESPONSE_BYTES,
@@ -188,9 +189,22 @@ class DemoBedrockReasoningClient:
             if not isinstance(facts, list) or not isinstance(inferences, list) or not isinstance(conclusions, list):
                 return raw
 
+            def probability(raw_value: object) -> str:
+                try:
+                    parsed = Decimal(str(raw_value))
+                except (InvalidOperation, ValueError):
+                    return "0"
+                if not parsed.is_finite() or parsed < 0 or parsed > 1:
+                    return "0"
+                rendered = format(parsed, "f").rstrip("0").rstrip(".")
+                return rendered or "0"
+
             grounded_facts = []
             for item in facts:
                 if not isinstance(item, dict):
+                    continue
+                statement = item.get("statement")
+                if not isinstance(statement, str) or not statement.strip():
                     continue
                 evidence = item.get("evidence_refs")
                 analyses = item.get("analysis_refs")
@@ -204,46 +218,84 @@ class DemoBedrockReasoningClient:
                 ))
                 if item["evidence_refs"] or item["analysis_refs"]:
                     grounded_facts.append(item)
-            fact_ids = {
-                item.get("fact_id") for item in grounded_facts
-                if isinstance(item.get("fact_id"), str)
-            }
+            fact_id_map = {}
+            for index, item in enumerate(grounded_facts, start=1):
+                old_id = item.get("fact_id")
+                new_id = f"FACT-{index:03d}"
+                if isinstance(old_id, str):
+                    fact_id_map[old_id] = new_id
+                item["fact_id"] = new_id
+                item["statement"] = item["statement"].strip()[:2_000]
 
             grounded_inferences = []
             for item in inferences:
                 if not isinstance(item, dict) or not isinstance(item.get("fact_refs"), list):
                     continue
+                statement = item.get("statement")
+                if not isinstance(statement, str) or not statement.strip():
+                    continue
                 item["fact_refs"] = list(dict.fromkeys(
-                    ref for ref in item["fact_refs"] if isinstance(ref, str) and ref in fact_ids
+                    fact_id_map[ref] for ref in item["fact_refs"]
+                    if isinstance(ref, str) and ref in fact_id_map
                 ))
                 if item["fact_refs"]:
                     grounded_inferences.append(item)
-            inference_ids = {
-                item.get("inference_id") for item in grounded_inferences
-                if isinstance(item.get("inference_id"), str)
-            }
+            inference_id_map = {}
+            for index, item in enumerate(grounded_inferences, start=1):
+                old_id = item.get("inference_id")
+                new_id = f"INFER-{index:03d}"
+                if isinstance(old_id, str):
+                    inference_id_map[old_id] = new_id
+                item["inference_id"] = new_id
+                item["statement"] = item["statement"].strip()[:2_000]
+                item["confidence"] = probability(item.get("confidence"))
 
             grounded_conclusions = []
             for item in conclusions:
                 if not isinstance(item, dict):
+                    continue
+                statement = item.get("statement")
+                if not isinstance(statement, str) or not statement.strip():
                     continue
                 fact_refs = item.get("fact_refs")
                 inference_refs = item.get("inference_refs")
                 if not isinstance(fact_refs, list) or not isinstance(inference_refs, list):
                     continue
                 item["fact_refs"] = list(dict.fromkeys(
-                    ref for ref in fact_refs if isinstance(ref, str) and ref in fact_ids
+                    fact_id_map[ref] for ref in fact_refs
+                    if isinstance(ref, str) and ref in fact_id_map
                 ))
                 item["inference_refs"] = list(dict.fromkeys(
-                    ref for ref in inference_refs if isinstance(ref, str) and ref in inference_ids
+                    inference_id_map[ref] for ref in inference_refs
+                    if isinstance(ref, str) and ref in inference_id_map
                 ))
                 if item["fact_refs"] or item["inference_refs"]:
                     grounded_conclusions.append(item)
+            for index, item in enumerate(grounded_conclusions, start=1):
+                item["conclusion_id"] = f"CONCL-{index:03d}"
+                item["statement"] = item["statement"].strip()[:2_000]
+                item["confidence"] = probability(item.get("confidence"))
 
-            value["facts"] = grounded_facts
-            value["inferences"] = grounded_inferences
-            value["conclusions"] = grounded_conclusions
-            return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            components = value.get("confidence_components")
+            components = components if isinstance(components, dict) else {}
+            normalized = {
+                "facts": grounded_facts,
+                "inferences": grounded_inferences,
+                "conclusions": grounded_conclusions,
+                "limitations": [
+                    item.strip()[:512] for item in value.get("limitations", [])
+                    if isinstance(item, str) and item.strip()
+                ][:50],
+                "watchpoints": [
+                    item.strip()[:512] for item in value.get("watchpoints", [])
+                    if isinstance(item, str) and item.strip()
+                ][:50],
+                "confidence_components": {
+                    name: probability(components.get(name))
+                    for name in ("evidence_quality", "consistency", "coverage", "overall")
+                },
+            }
+            return json.dumps(normalized, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
         except Exception:
             return raw
 
