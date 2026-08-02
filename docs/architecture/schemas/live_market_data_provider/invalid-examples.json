@@ -1,0 +1,8 @@
+{
+  "contract": "https://schemas.cryptotrust.local/ports/live-market-data-provider/1.0.0/contract.schema.json",
+  "examples": [
+    {"test_id": "CT-LIVE-MARKET-FETCH-N01", "expected": "required", "value": {"method": "fetch_daily_ohlcv", "request": {}, "response": {}}},
+    {"test_id": "CT-LIVE-MARKET-HEALTH-N01", "expected": "required", "value": {"method": "health_check", "request": {}, "response": {}}},
+    {"test_id": "CT-LIVE-MARKET-CAPABILITIES-N01", "expected": "required", "value": {"method": "capabilities", "request": {}, "response": {}}}
+  ]
+}

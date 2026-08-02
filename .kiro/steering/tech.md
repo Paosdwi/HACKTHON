@@ -27,9 +27,9 @@ Infrastructure ──implements───────────┘
 
 必要模型：`Task`、`Execution`、immutable `Evidence`、`EvidenceClaimLink`、append-only `EvidenceAssessment`、`AnalysisResult`、planning/deadline/reasoning value objects。
 
-Application 擁有並版本化：`TaskRepository`、`ExecutionRepository`、`EvidenceRepository`、`ArtifactRepository`、`EventPublisher`、`SourceCollector`、`EvidenceExtractor`、`MarketRegimeProvider`、`ReasoningProvider`、`Clock`。
+Application 擁有並版本化：`TaskRepository`、`ExecutionRepository`、`EvidenceRepository`、`ArtifactRepository`、`EventPublisher`、`SourceCollector`、`LiveMarketDataProvider`、`EvidenceExtractor`、`MarketRegimeProvider`、`ReasoningProvider`、`Clock`。
 
-人類索引：`docs/architecture/ports-and-schemas.md`。欄位級 authority：`docs/architecture/schemas/**/contract.schema.json`（JSON Schema Draft 2020-12）。十個 Port 共 37 個 stable methods；每個 operation 以 `x-method-policy` 完整定義 timeout、retry owner、idempotency 與 concurrency，並有 method-specific `ErrorResult` union。未知 adapter/provider exception 一律安全映射為 `unexpected_provider_error`，不得洩漏 vendor exception。
+人類索引：`docs/architecture/ports-and-schemas.md`。欄位級 authority：`docs/architecture/schemas/**/contract.schema.json`（JSON Schema Draft 2020-12）。十一個 Port 共 40 個 stable methods；每個 operation 以 `x-method-policy` 完整定義 timeout、retry owner、idempotency 與 concurrency，並有 method-specific `ErrorResult` union。未知 adapter/provider exception 一律安全映射為 `unexpected_provider_error`，不得洩漏 vendor exception。
 
 ## Distributed deadline
 
@@ -57,6 +57,7 @@ Application 擁有並版本化：`TaskRepository`、`ExecutionRepository`、`Evi
 ## Provider 邊界
 
 - SourceCollector 依 ADR-007 limits：HTTPS/443、URL≤2048、redirect≤3 每跳重驗、拒 private/loopback/link-local/reserved/multicast/metadata、connect 3s、read 10s、static 15s、Playwright 30s、raw≤5MiB、clean≤1MiB、per-host concurrency 2、interval≥1000ms。精確值仍待安全審核。
+- LiveMarketDataProvider 依核准 OQ-B013：Binance Spot public klines、五個 USDT 幣對、UTC/1d closed candle、Decimal-only、page 10s/operation 30s、Core retry owner、zero hidden retry；Core 三天 overlap reconciliation 後才合併，禁止 forward-fill。
 - EvidenceExtractor repair 最多一次、≤20 秒；再失敗 quarantine。
 - MarketRegimeProvider infer ≤25 秒且不重試。Adapter 只回 schema-valid result 或 typed error；不得生成 fallback probabilities。Core 建立版本化 deterministic fallback `AnalysisResult`。
 - Reasoning Context canonical JSON≤524288 bytes、provider tokenizer≤64000 tokens、Evidence≤120、Analysis≤32、Contradiction≤64、Limitations≤50、question/excerpt≤2000 scalars；deterministic truncate 並記 omissions。
@@ -72,7 +73,7 @@ Application 擁有並版本化：`TaskRepository`、`ExecutionRepository`、`Evi
 ## 測試與安全
 
 - Unit：value object、planner、formula、state、trust、fingerprint。
-- Shared Contract：十個 Port 的 37 個 stable method IDs；fake 與 production adapters 使用相同 assertions。逐 operation 驗證完整 `x-method-policy`、method-specific `ErrorResult` 與 unknown exception → `unexpected_provider_error`；shared semantic assertions 覆蓋 Evidence offset/token TTL、Reasoning citation graph 與 Artifact Manifest 跨欄 invariant。
+- Shared Contract：十一個 Port 的 40 個 stable methods；fake 與 production adapters 使用相同 assertions。逐 operation 驗證完整 `x-method-policy`、method-specific `ErrorResult` 與 unknown exception → `unexpected_provider_error`；shared semantic assertions 覆蓋 Evidence offset/token TTL、Live Market closed-candle/gap/reconciliation、Reasoning citation graph 與 Artifact Manifest 跨欄 invariant。
 - Integration core：Core-owned tests 只在 `tests/integration/core/`；使用 fake/local boundaries，不連真實 provider/AWS。
 - Integration provider：只在 `tests/integration/providers/`，顯式 opt-in；一般 CI 無 AWS/network/secret。
 - Architecture：Domain/Application import 與 ownership path。

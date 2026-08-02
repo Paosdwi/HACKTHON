@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cryptotrust.local/ports/live-market-data-provider/1.0.0/contract.schema.json",
+  "title": "LiveMarketDataProvider Port contract",
+  "x-contract-version": "1.0.0",
+  "x-port-policy": {
+    "retry_owner": "core",
+    "provider_retries": 0,
+    "hidden_adapter_retries": false,
+    "fetch_timeout_ms": 30000,
+    "per_page_timeout_ms": 10000,
+    "health_timeout_ms": 3000,
+    "capabilities_timeout_ms": 3000,
+    "idempotency": "operation_id plus canonical request identify one fetch",
+    "concurrency": "stateless read-only market-data access"
+  },
+  "x-error-codes": [
+    "invalid_request", "payload_conflict", "deadline_exceeded", "provider_timeout",
+    "provider_rate_limited", "provider_unavailable", "provider_access_denied",
+    "invalid_provider_schema", "invalid_market_bar", "coverage_gap",
+    "reconciliation_failed", "payload_too_large", "unexpected_provider_error"
+  ],
+  "oneOf": [
+    {"$ref": "#/$defs/FetchOperation"},
+    {"$ref": "#/$defs/HealthOperation"},
+    {"$ref": "#/$defs/CapabilitiesOperation"}
+  ],
+  "$defs": {
+    "OperationId": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/OperationId"},
+    "Deadline": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/DeadlineDTO"},
+    "Utc": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/UtcInstant"},
+    "Date": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/UtcDate"},
+    "Decimal": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/CanonicalDecimal"},
+    "Hash": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/Sha256"},
+    "Health": {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ProviderHealthDTO"},
+    "Asset": {"enum": ["BTC", "ETH", "SOL", "BNB", "XRP"]},
+    "Pair": {"enum": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]},
+    "FetchErrorResult": {
+      "allOf": [
+        {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},
+        {"properties": {"error": {"properties": {"code": {"enum": [
+          "invalid_request", "payload_conflict", "deadline_exceeded", "provider_timeout",
+          "provider_rate_limited", "provider_unavailable", "provider_access_denied",
+          "invalid_provider_schema", "invalid_market_bar", "coverage_gap",
+          "reconciliation_failed", "payload_too_large", "unexpected_provider_error"
+        ]}}}}}
+      ]
+    },
+    "HealthErrorResult": {
+      "allOf": [
+        {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},
+        {"properties": {"error": {"properties": {"code": {"enum": ["deadline_exceeded", "provider_timeout", "provider_rate_limited", "provider_unavailable", "provider_access_denied", "invalid_provider_schema", "unexpected_provider_error"]}}}}}
+      ]
+    },
+    "CapabilitiesErrorResult": {
+      "allOf": [
+        {"$ref": "https://schemas.cryptotrust.local/common/1.0.0/common.schema.json#/$defs/ErrorResult"},
+        {"properties": {"error": {"properties": {"code": {"enum": ["deadline_exceeded", "unexpected_provider_error"]}}}}}
+      ]
+    },
+    "FetchRequest": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "asset", "pair", "start_date", "end_date", "as_of", "deadline", "interval", "expected_provider", "provider_ruleset_version"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"}, "operation_id": {"$ref": "#/$defs/OperationId"},
+        "asset": {"$ref": "#/$defs/Asset"}, "pair": {"$ref": "#/$defs/Pair"},
+        "start_date": {"$ref": "#/$defs/Date"}, "end_date": {"$ref": "#/$defs/Date"},
+        "as_of": {"$ref": "#/$defs/Utc"}, "deadline": {"$ref": "#/$defs/Deadline"},
+        "interval": {"const": "1d"}, "expected_provider": {"const": "binance_spot"},
+        "provider_ruleset_version": {"const": "binance-live-market-1.0.0"}
+      }
+    },
+    "LiveMarketBarDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "asset", "pair", "day", "open", "high", "low", "close", "volume", "source_url", "fetched_at", "source_open_time_ms", "source_close_time_ms", "content_hash", "interval", "provider", "provider_ruleset_version", "provenance"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"}, "asset": {"$ref": "#/$defs/Asset"}, "pair": {"$ref": "#/$defs/Pair"},
+        "day": {"$ref": "#/$defs/Date"}, "open": {"$ref": "#/$defs/Decimal"}, "high": {"$ref": "#/$defs/Decimal"},
+        "low": {"$ref": "#/$defs/Decimal"}, "close": {"$ref": "#/$defs/Decimal"}, "volume": {"$ref": "#/$defs/Decimal"},
+        "source_url": {"type": "string", "pattern": "^https://api\\.binance\\.com/api/v3/klines\\?", "maxLength": 2048},
+        "fetched_at": {"$ref": "#/$defs/Utc"}, "source_open_time_ms": {"type": "integer", "minimum": 0},
+        "source_close_time_ms": {"type": "integer", "minimum": 1}, "content_hash": {"$ref": "#/$defs/Hash"},
+        "interval": {"const": "1d"}, "provider": {"const": "binance_spot"},
+        "provider_ruleset_version": {"const": "binance-live-market-1.0.0"}, "provenance": {"const": "live_extension"}
+      }
+    },
+    "FetchResult": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "operation_id", "asset", "pair", "requested_start_date", "requested_end_date", "bars", "complete", "missing_dates", "incomplete_dates", "fetched_at", "provider", "provider_ruleset_version"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"}, "operation_id": {"$ref": "#/$defs/OperationId"},
+        "asset": {"$ref": "#/$defs/Asset"}, "pair": {"$ref": "#/$defs/Pair"},
+        "requested_start_date": {"$ref": "#/$defs/Date"}, "requested_end_date": {"$ref": "#/$defs/Date"},
+        "bars": {"type": "array", "maxItems": 400, "items": {"$ref": "#/$defs/LiveMarketBarDTO"}},
+        "complete": {"type": "boolean"}, "missing_dates": {"type": "array", "maxItems": 400, "uniqueItems": true, "items": {"$ref": "#/$defs/Date"}},
+        "incomplete_dates": {"type": "array", "maxItems": 400, "uniqueItems": true, "items": {"$ref": "#/$defs/Date"}},
+        "fetched_at": {"$ref": "#/$defs/Utc"}, "provider": {"const": "binance_spot"},
+        "provider_ruleset_version": {"const": "binance-live-market-1.0.0"}
+      }
+    },
+    "HealthRequest": {
+      "type": "object", "additionalProperties": false, "required": ["schema_version", "operation_id", "deadline"],
+      "properties": {"schema_version": {"const": "1.0.0"}, "operation_id": {"$ref": "#/$defs/OperationId"}, "deadline": {"$ref": "#/$defs/Deadline"}}
+    },
+    "CapabilitiesDTO": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schema_version", "assets", "pairs", "interval", "timezone", "quote_asset", "max_page_size", "authentication", "provider", "provider_ruleset_version"],
+      "properties": {
+        "schema_version": {"const": "1.0.0"}, "assets": {"const": ["BTC", "ETH", "SOL", "BNB", "XRP"]},
+        "pairs": {"const": ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BNBUSDT", "XRPUSDT"]}, "interval": {"const": "1d"},
+        "timezone": {"const": "UTC"}, "quote_asset": {"const": "USDT"}, "max_page_size": {"const": 1000},
+        "authentication": {"const": "none"}, "provider": {"const": "binance_spot"}, "provider_ruleset_version": {"const": "binance-live-market-1.0.0"}
+      }
+    },
+    "FetchOperation": {
+      "x-contract-test-id": "CT-LIVE-MARKET-FETCH-01",
+      "x-method-policy": {"timeout_ms": 30000, "retry_owner": "core", "max_attempts": 1, "hidden_adapter_retries": false, "idempotency": {"mode": "operation_request_identity", "key_fields": ["operation_id", "asset", "pair", "start_date", "end_date", "as_of", "provider_ruleset_version"]}, "concurrency": {"mode": "stateless_read_only"}, "error_codes": ["invalid_request", "payload_conflict", "deadline_exceeded", "provider_timeout", "provider_rate_limited", "provider_unavailable", "provider_access_denied", "invalid_provider_schema", "invalid_market_bar", "coverage_gap", "reconciliation_failed", "payload_too_large", "unexpected_provider_error"]},
+      "type": "object", "additionalProperties": false, "required": ["method", "request", "response"],
+      "properties": {"method": {"const": "fetch_daily_ohlcv"}, "request": {"$ref": "#/$defs/FetchRequest"}, "response": {"oneOf": [{"$ref": "#/$defs/FetchResult"}, {"$ref": "#/$defs/FetchErrorResult"}]}}
+    },
+    "HealthOperation": {
+      "x-contract-test-id": "CT-LIVE-MARKET-HEALTH-01",
+      "x-method-policy": {"timeout_ms": 3000, "retry_owner": "core", "max_attempts": 1, "hidden_adapter_retries": false, "idempotency": {"mode": "side_effect_free_health_read", "key_fields": ["operation_id"]}, "concurrency": {"mode": "independent_health_reads"}, "error_codes": ["deadline_exceeded", "provider_timeout", "provider_rate_limited", "provider_unavailable", "provider_access_denied", "invalid_provider_schema", "unexpected_provider_error"]},
+      "type": "object", "additionalProperties": false, "required": ["method", "request", "response"],
+      "properties": {"method": {"const": "health_check"}, "request": {"$ref": "#/$defs/HealthRequest"}, "response": {"oneOf": [{"$ref": "#/$defs/Health"}, {"$ref": "#/$defs/HealthErrorResult"}]}}
+    },
+    "CapabilitiesOperation": {
+      "x-contract-test-id": "CT-LIVE-MARKET-CAPABILITIES-01",
+      "x-method-policy": {"timeout_ms": 3000, "retry_owner": "core", "max_attempts": 1, "hidden_adapter_retries": false, "idempotency": {"mode": "deterministic_no_io", "key_fields": ["operation_id"]}, "concurrency": {"mode": "independent_no_io_reads"}, "error_codes": ["deadline_exceeded", "unexpected_provider_error"]},
+      "type": "object", "additionalProperties": false, "required": ["method", "request", "response"],
+      "properties": {"method": {"const": "capabilities"}, "request": {"$ref": "#/$defs/HealthRequest"}, "response": {"oneOf": [{"$ref": "#/$defs/CapabilitiesDTO"}, {"$ref": "#/$defs/CapabilitiesErrorResult"}]}}
+    }
+  }
+}
