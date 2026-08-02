@@ -90,7 +90,7 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         self.assertIn("證據清單", status.text)
         self.assertIn("執行紀錄", status.text)
         self.assertIn("成果清冊", status.text)
-        self.assertIn("下載最低成果組合", status.text)
+        self.assertIn("下載比賽四份成果檔案", status.text)
         self.assertEqual(4, status.text.count(" download "))
 
         parsed_status = urlsplit(result["status_url"])
@@ -160,11 +160,13 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         self.assertIn("本機 fake", home.text)
         self.assertIn("不會連線至 AWS", home.text)
         self.assertIn(
-            "請分析 BTC 目前的市場狀況，列出關鍵證據、信心與已知限制。",
+            "請分析所選幣種目前的市場狀況，整合價格走勢與主要新聞",
             home.text,
         )
         self.assertIn("name=\"question\"", home.text)
         self.assertIn("name=\"assets\"", home.text)
+        self.assertEqual(5, home.text.count('name="assets"'))
+        self.assertEqual(5, home.text.count(' checked><span class="asset-chip">'))
         self.assertIn("crypto_trust_demo_session", self.client.cookies)
 
         submitted = self.client.post(
@@ -176,7 +178,7 @@ class FullLocalHttpFlowTests(unittest.TestCase):
         self.assertTrue(submitted.headers["location"].startswith("/demo/status?"))
         status = self.client.get(submitted.headers["location"])
         self.assertEqual(200, status.status_code)
-        self.assertIn("下載最低成果組合", status.text)
+        self.assertIn("下載比賽四份成果檔案", status.text)
         self.assertIn("分析進度", status.text)
         self.assertIn("查看完整回答", status.text)
 

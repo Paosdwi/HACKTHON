@@ -96,7 +96,7 @@ class DemoApp:
             )
         asset_inputs = "".join(
             f'<label><input type="checkbox" name="assets" value="{escape_html(asset)}"'
-            f'{" checked" if asset == "BTC" else ""}><span class="asset-chip">{escape_html(asset)}</span></label>'
+            f' checked><span class="asset-chip">{escape_html(asset)}</span></label>'
             for asset in SUPPORTED_ASSETS
         )
         body = (
@@ -112,7 +112,7 @@ class DemoApp:
             '</div></div></div></div>'
             '<form method="post" action="/demo/submit" class="composer">'
             '<label for="question"><strong>分析問題</strong></label>'
-            '<textarea id="question" name="question" maxlength="2000" required>請分析 BTC 目前的市場狀況，列出關鍵證據、信心與已知限制。</textarea>'
+            '<textarea id="question" name="question" maxlength="2000" required>請分析所選幣種目前的市場狀況，整合價格走勢與主要新聞，逐一提出市場判斷、正反方證據、風險、不確定性、信心與後續觀察重點，並比較各幣種訊號的一致程度。</textarea>'
             '<input type="hidden" name="timeframe_start" value="2026-07-18T00:00:00Z">'
             '<input type="hidden" name="timeframe_end" value="2026-08-01T00:00:00Z">'
             '<div class="composer-tools">'
@@ -128,7 +128,7 @@ class DemoApp:
             f'{deployment_copy}'
             '</aside></div>'
         )
-        title = "CryptoTrust Agent－本機示範"
+        title = "CryptoTrust Agent－AWS 公開示範" if self._live_mode else "CryptoTrust Agent－本機示範"
         return DemoPageResult(title, self._page(title, body))
 
     def render_status(self, status: DemoRunStatusDTO) -> DemoPageResult:
@@ -168,7 +168,7 @@ class DemoApp:
             ):
                 href = f"/demo/{action}?{urlencode(query)}"
                 parts.append(f'<a class="button secondary" href="{escape_html(href)}">{escape_html(label)}</a>')
-            parts.append('</div></section><section><div class="section-heading"><h2>下載最低成果組合</h2></div><div class="artifact-actions">')
+            parts.append('</div></section><section><div class="section-heading"><h2>下載比賽四份成果檔案</h2></div><div class="artifact-actions">')
             for artifact_type, artifact_format, label in (
                 ("final_report", "json", "最終分析報告 JSON"),
                 ("evidence_list", "json", "證據清單 JSON"),

@@ -114,6 +114,15 @@ class AwsDemoFormalRunStepExecutor:
         )
 
     @staticmethod
+    def _analysis_question(question: str, assets: tuple[str, ...]) -> str:
+        selected_assets = "、".join(assets)
+        return (
+            f"{question}\n\n"
+            f"指定分析幣種：{selected_assets}。請逐一分析每個指定幣種，不得省略；"
+            "若某幣種資料不足，仍須點名並把不足列為限制。"
+        )
+
+    @staticmethod
     def _job(request: FormalRunStepRequest) -> tuple[str, str, str]:
         if len(request.planned_job_ids) != 1:
             raise ValueError("demo extraction requires one planned job")
@@ -305,7 +314,7 @@ class AwsDemoFormalRunStepExecutor:
             "Public demo uses bounded public news RSS and Binance/Binance.US daily closed OHLCV.",
         )))
         context = ReasoningContextDTO(
-            snapshot.question,
+            self._analysis_question(snapshot.question, snapshot.assets),
             refs,
             snapshot.analysis_refs,
             snapshot.contradictions,

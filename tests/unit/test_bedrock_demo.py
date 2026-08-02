@@ -44,6 +44,11 @@ class _Session:
 
 
 class DemoBedrockTests(unittest.TestCase):
+    def test_demo_defaults_allow_detailed_but_bounded_analysis(self) -> None:
+        config = DemoBedrockConfig()
+        self.assertEqual(4_096, config.max_tokens)
+        self.assertEqual(0.2, config.temperature)
+
     def test_task_role_client_uses_converse_without_guardrail_gate(self) -> None:
         runtime = _Runtime()
         session = _Session(runtime)
@@ -64,6 +69,10 @@ class DemoBedrockTests(unittest.TestCase):
         self.assertEqual("us.anthropic.claude-sonnet-4-20250514-v1:0", runtime.calls[0]["modelId"])
         self.assertNotIn("guardrailConfig", runtime.calls[0])
         self.assertEqual([], json.loads(result)["facts"])
+        system_prompt = runtime.calls[0]["system"][0]["text"]
+        self.assertIn("繁體中文", system_prompt)
+        self.assertIn("逐一涵蓋", system_prompt)
+        self.assertIn("正方與反方訊號", system_prompt)
 
     def test_ungrounded_claims_are_removed_before_core_validation(self) -> None:
         payload = {
