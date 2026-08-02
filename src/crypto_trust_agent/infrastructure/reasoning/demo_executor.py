@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 from datetime import timedelta
 from decimal import Decimal
 from typing import Protocol
@@ -89,12 +90,20 @@ class AwsDemoFormalRunStepExecutor:
 
     def execute(self, request: FormalRunStepRequest) -> FormalRunStepResult:
         if request.step is FormalRunStep.EXTRACTION:
-            return self._extract_news(request)
-        if request.step is FormalRunStep.MARKET_ANALYSIS:
-            return self._market_analysis(request)
-        if request.step is FormalRunStep.REASONING_BOUNDARY:
-            return self._reason(request)
-        return self._delegate.execute(request)
+            result = self._extract_news(request)
+        elif request.step is FormalRunStep.MARKET_ANALYSIS:
+            result = self._market_analysis(request)
+        elif request.step is FormalRunStep.REASONING_BOUNDARY:
+            result = self._reason(request)
+        else:
+            result = self._delegate.execute(request)
+        _LOGGER.info(
+            "aws_demo_step step=%s outcome=%s reason_code=%s",
+            request.step.value,
+            result.outcome.value,
+            result.reason_code or "none",
+        )
+        return result
 
     def _delegate_events(self, request: FormalRunStepRequest) -> tuple[PipelineContributionDTO, ...]:
         result = self._delegate.execute(request)
@@ -332,3 +341,5 @@ class AwsDemoFormalRunStepExecutor:
 
 
 __all__ = ("AwsDemoFormalRunStepExecutor",)
+_LOGGER = logging.getLogger(__name__)
+
